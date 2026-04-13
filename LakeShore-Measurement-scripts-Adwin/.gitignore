@@ -1,0 +1,17 @@
+
+*.asv
+Matlab/DC measurements/Gt/Make_Gt_Isource_Keithley.m
+Matlab/DC measurements/IV/Make_IV_Current_sourced.m
+*.mat
+*.mat
+*.png
+*.asv
+*.mat
+*.asv
+*.mat
+Matlab/Multi-gate-4P measurements/Make_Dual_Gate_sweep_Vbias.m
+Matlab/Multi-gate-4P measurements/Make_Gate_sweep_Vbias.m
+Matlab/Multi-gate-4P measurements/Make_stability_diagram_multiGate_Vbias.m
+output.txt
+*.BAK
+*.fig

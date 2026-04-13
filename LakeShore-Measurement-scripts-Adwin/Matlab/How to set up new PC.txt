@@ -1,0 +1,7 @@
+HP network adapter, set static IP address to 192.168.1.1, subnet mask to 255.255.255.0
+set ADwin IP address to 192.168.1.99 in adconfig, subnet mask to 255.255.255.0
+install minGW 
+install labone
+install GitHub and link repo
+install matlab, add paths to Libs folder and subfolders, add path to Labone C:\Program Files\Zurich Instruments\LabOne\API\MATLAB2012\Driver
+GPIB to USB driver for  https://www.ni.com/de/support/downloads/drivers/download.ni-488-2.html#575749
