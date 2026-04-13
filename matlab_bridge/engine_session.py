@@ -69,10 +69,9 @@ class MatlabBridge:
     # ------------------------------------------------------------------
 
     def _load_paths(self):
-        libs_path = os.path.join(LAKESHORE_ROOT, "Libs")
-        self._eng.eval(f"addpath(genpath('{libs_path}'));", nargout=0)
-        adwin_path = os.path.join(LAKESHORE_ROOT, "Libs", "ADwin_script")
-        self._eng.eval(f"addpath(genpath('{adwin_path}'));", nargout=0)
+        # Add all LakeShore subfolders (Libs, GUI/APS, etc.)
+        lakeshore_root = LAKESHORE_ROOT.replace("\\", "/")
+        self._eng.eval(f"addpath(genpath('{lakeshore_root}'));", nargout=0)
         print("MATLAB paths loaded.")
 
     def _init_adwin(self):
