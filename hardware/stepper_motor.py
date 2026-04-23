@@ -160,7 +160,15 @@ class StepperMotor:
     def get_position(self) -> float:
         """Return current position in calibrated units (mm or degrees)."""
         resp = self._query("get_position")
-        steps = int(resp) if resp.lstrip("-").isdigit() else 0
+        raw_val = int(resp) if resp.lstrip("-").isdigit() else 0
+        
+        # If the quadrature encoder is enabled, the hardware returns encoder counts.
+        # We must convert counts back to motor steps using the encoder ratio.
+        if self.encoder_type == 2:
+            steps = raw_val * self.encoder_ratio
+        else:
+            steps = raw_val
+            
         return steps * self.conversion_factor
 
     # ------------------------------------------------------------------
