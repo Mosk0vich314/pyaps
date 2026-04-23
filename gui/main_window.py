@@ -12,13 +12,111 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QGridLayout,
     QGroupBox, QPushButton, QLabel, QDoubleSpinBox, QSpinBox,
     QComboBox, QLineEdit, QCheckBox, QSizePolicy, QMessageBox,
+    QScrollArea, QFrame, QTabWidget, QStatusBar, QFormLayout,
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QObject
 from PySide6.QtGui import QImage, QPixmap, QFont
 
 from hardware.stage_controller import StageController
 from hardware.camera import Camera
+from hardware.device import LAYOUTS, generate_device_coordinates
+from hardware.switch_box import SwitchBox
 from matlab_bridge.engine_session import MatlabBridge
+from utilities.process_yield import process_yield
+
+
+# Charcoal / teal / orange palette with saturn red + yellow accents
+C_BG       = "#1a1c1f"   # deep charcoal
+C_PANEL    = "#242629"   # panel charcoal
+C_PANEL_2  = "#2c2f33"   # raised
+C_BORDER   = "#3a3e44"
+C_TEXT     = "#e4e6ea"
+C_TEXT_DIM = "#a8adb4"
+C_TEAL     = "#2dd4bf"
+C_TEAL_D   = "#14b8a6"
+C_ORANGE   = "#f97316"
+C_ORANGE_D = "#c2410c"
+C_RED      = "#dc2626"   # saturn red
+C_YELLOW   = "#eab308"
+C_GREEN    = "#65a30d"
+
+APP_STYLESHEET = f"""
+QMainWindow, QWidget {{ background: {C_BG}; color: {C_TEXT};
+    font-family: 'Segoe UI', Arial, sans-serif; font-size: 10pt; }}
+QGroupBox {{
+    background: {C_PANEL};
+    border: 1px solid {C_BORDER};
+    border-left: 3px solid {C_TEAL};
+    border-radius: 6px;
+    margin-top: 16px;
+    padding: 14px 8px 8px 8px;
+}}
+QGroupBox::title {{
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 12px;
+    padding: 0 6px;
+    color: {C_TEAL};
+    font-weight: 700;
+    font-size: 10pt;
+    letter-spacing: 0.5px;
+}}
+QGroupBox[accent="orange"]  {{ border-left-color: {C_ORANGE}; }}
+QGroupBox[accent="orange"]::title {{ color: {C_ORANGE}; }}
+QGroupBox[accent="yellow"]  {{ border-left-color: {C_YELLOW}; }}
+QGroupBox[accent="yellow"]::title {{ color: {C_YELLOW}; }}
+QGroupBox[accent="red"]     {{ border-left-color: {C_RED}; }}
+QGroupBox[accent="red"]::title {{ color: #f87171; }}
+QGroupBox[accent="green"]   {{ border-left-color: {C_GREEN}; }}
+QGroupBox[accent="green"]::title {{ color: #a3e635; }}
+QGroupBox[accent="teal_d"]  {{ border-left-color: {C_TEAL_D}; }}
+QGroupBox[accent="teal_d"]::title {{ color: {C_TEAL_D}; }}
+
+QLabel {{ color: {C_TEXT}; background: transparent; }}
+QPushButton {{
+    background: #33363b;
+    color: {C_TEXT};
+    border: 1px solid {C_BORDER};
+    border-radius: 4px;
+    padding: 6px 10px;
+    min-height: 20px;
+}}
+QPushButton:hover   {{ background: #3d4046; border-color: {C_TEAL_D}; }}
+QPushButton:pressed {{ background: #2a2d31; }}
+QPushButton:disabled{{ background: #24262a; color: #6a6d73; border-color: #30333a; }}
+QDoubleSpinBox, QSpinBox, QLineEdit, QComboBox {{
+    background: {C_BG};
+    color: {C_TEXT};
+    border: 1px solid {C_BORDER};
+    border-radius: 3px;
+    padding: 3px 6px;
+    min-height: 20px;
+    selection-background-color: {C_TEAL_D};
+}}
+QDoubleSpinBox:focus, QSpinBox:focus, QLineEdit:focus, QComboBox:focus {{
+    border-color: {C_TEAL};
+}}
+QCheckBox {{ spacing: 6px; }}
+QCheckBox::indicator {{ width: 14px; height: 14px; border: 1px solid {C_BORDER};
+    border-radius: 3px; background: {C_BG}; }}
+QCheckBox::indicator:checked {{ background: {C_TEAL}; border-color: {C_TEAL}; }}
+
+QStatusBar {{ background: #101214; color: {C_TEAL}; border-top: 1px solid {C_BORDER}; }}
+QStatusBar QLabel {{ color: {C_TEAL}; }}
+
+QScrollArea {{ border: none; background: transparent; }}
+QScrollBar:vertical {{ background: {C_BG}; width: 10px; margin: 2px; border-radius: 5px; }}
+QScrollBar::handle:vertical {{ background: {C_BORDER}; border-radius: 5px; min-height: 24px; }}
+QScrollBar::handle:vertical:hover {{ background: {C_TEAL_D}; }}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
+QScrollBar:horizontal {{ background: {C_BG}; height: 10px; margin: 2px; border-radius: 5px; }}
+QScrollBar::handle:horizontal {{ background: {C_BORDER}; border-radius: 5px; min-width: 24px; }}
+QScrollBar::handle:horizontal:hover {{ background: {C_TEAL_D}; }}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ background: transparent; }}
+"""
+
 
 
 # ---------------------------------------------------------------------------
@@ -34,12 +132,13 @@ class _Signals(QObject):
 # ---------------------------------------------------------------------------
 
 class MainWindow(QMainWindow):
-    UNIT_MULT = 1e-6   # µm → meters
+    UNIT_MULT = 1e-3   # µm → mm (device coordinates are in µm, stage works in mm)
 
     def __init__(self):
         super().__init__()
         self.setWindowTitle("PYAPS — Probe Station Control")
-        self.setMinimumSize(1200, 800)
+        self.setMinimumSize(1280, 860)
+        self.setStyleSheet(APP_STYLESHEET)
 
         self._stage: StageController | None = None
         self._camera = Camera(device_index=0, fps=10)
@@ -64,166 +163,409 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         root = QHBoxLayout(central)
+        root.setContentsMargins(8, 8, 8, 8)
+        root.setSpacing(8)
 
-        # Left column: camera + chip scan
+        # Left column: camera expands, Run panel fixed below
         left = QVBoxLayout()
-        left.addWidget(self._build_camera_panel())
-        left.addWidget(self._build_chip_scan_panel())
+        left.setSpacing(8)
+        cam = self._build_camera_panel()
+        cam.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        left.addWidget(cam, stretch=1)
+        left.addWidget(self._build_run_box(), stretch=0)
 
-        # Right column: motors + measurements
-        right = QVBoxLayout()
-        right.addWidget(self._build_motor_panel())
-        right.addWidget(self._build_measurement_panel())
-        right.addStretch()
+        # Right column: tabs — Stage / Settings
+        tabs = QTabWidget()
+        tabs.setMinimumWidth(440)
+        tabs.addTab(self._wrap_scroll(self._build_motor_panel()),          "Stage")
+        tabs.addTab(self._wrap_scroll(self._build_settings_panel()),       "Measurement Settings")
 
         root.addLayout(left, stretch=3)
-        root.addLayout(right, stretch=2)
+        root.addWidget(tabs, stretch=2)
+
+        self._status_bar = QStatusBar()
+        self.setStatusBar(self._status_bar)
+        self._status_bar.showMessage("Ready")
+
+    def _wrap_scroll(self, widget: QWidget) -> QScrollArea:
+        scroll = QScrollArea()
+        scroll.setWidget(widget)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        return scroll
 
     def _build_camera_panel(self) -> QGroupBox:
         box = QGroupBox("Camera")
+        box.setProperty("accent", "teal_d")
         layout = QVBoxLayout(box)
+        layout.setContentsMargins(10, 16, 10, 10)
         self._camera_label = QLabel("No camera feed")
         self._camera_label.setAlignment(Qt.AlignCenter)
-        self._camera_label.setMinimumSize(640, 480)
-        self._camera_label.setStyleSheet("background: black; color: white;")
+        self._camera_label.setMinimumSize(480, 300)
+        self._camera_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self._camera_label.setStyleSheet(
+            f"background: #0a0c0f; color: {C_TEAL_D}; border: 1px solid {C_BORDER}; border-radius: 4px;"
+        )
         layout.addWidget(self._camera_label)
         return box
 
     def _build_motor_panel(self) -> QGroupBox:
         box = QGroupBox("Stage")
-        grid = QGridLayout(box)
+        box.setProperty("accent", "teal_d")
+        box.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        v = QVBoxLayout(box)
+        v.setSpacing(10)
+        v.setContentsMargins(10, 16, 10, 10)
 
-        # Step size
-        grid.addWidget(QLabel("Step (mm):"), 0, 0)
+        # ----- Position readback (top, always visible) -----
+        self._pos_label = QLabel("X: --    Y: --    Z: --")
+        mono = QFont("Consolas", 11); mono.setBold(True)
+        self._pos_label.setFont(mono)
+        self._pos_label.setStyleSheet(
+            f"background: #0f1114; color: {C_TEAL}; padding: 10px; border-radius: 4px; "
+            f"border: 1px solid {C_BORDER};"
+        )
+        self._pos_label.setAlignment(Qt.AlignCenter)
+        v.addWidget(self._pos_label)
+
+        # ----- Jog -----
+        jog_box = QGroupBox("Jog"); jog_box.setProperty("accent", "teal_d")
+        jog = QGridLayout(jog_box)
+        jog.setHorizontalSpacing(8); jog.setVerticalSpacing(8)
+        jog.setContentsMargins(10, 14, 10, 10)
+        for r in range(5):
+            jog.setRowMinimumHeight(r, 34)
+
+        jog.addWidget(QLabel("Step (mm):"), 0, 0)
         self._step_mm = QDoubleSpinBox()
         self._step_mm.setRange(0.001, 10.0)
         self._step_mm.setValue(0.1)
         self._step_mm.setDecimals(3)
-        grid.addWidget(self._step_mm, 0, 1, 1, 2)
-
-        # XY jog
-        btn_y_pos = QPushButton("+Y")
-        btn_y_neg = QPushButton("-Y")
-        btn_x_neg = QPushButton("-X")
-        btn_x_pos = QPushButton("+X")
-        btn_z_pos = QPushButton("+Z")
-        btn_z_neg = QPushButton("-Z")
-
-        grid.addWidget(btn_y_pos, 1, 1)
-        grid.addWidget(btn_x_neg, 2, 0)
-        grid.addWidget(btn_x_pos, 2, 2)
-        grid.addWidget(btn_y_neg, 3, 1)
-        grid.addWidget(btn_z_pos, 1, 3)
-        grid.addWidget(btn_z_neg, 3, 3)
-        grid.addWidget(QLabel("Z"), 2, 3, Qt.AlignCenter)
-
-        btn_y_pos.clicked.connect(lambda: self._jog_y(+1))
-        btn_y_neg.clicked.connect(lambda: self._jog_y(-1))
-        btn_x_neg.clicked.connect(lambda: self._jog_x(-1))
-        btn_x_pos.clicked.connect(lambda: self._jog_x(+1))
-        btn_z_pos.clicked.connect(lambda: self._jog_z(+1))
-        btn_z_neg.clicked.connect(lambda: self._jog_z(-1))
-
-        # Rotation
-        grid.addWidget(QLabel("Rot step (°):"), 4, 0)
+        jog.addWidget(self._step_mm, 0, 1)
+        jog.addWidget(QLabel("Rot step (°):"), 0, 2)
         self._rot_step = QDoubleSpinBox()
         self._rot_step.setRange(0.01, 90.0)
         self._rot_step.setValue(1.0)
-        grid.addWidget(self._rot_step, 4, 1)
-        btn_rot_pos = QPushButton("+θ")
-        btn_rot_neg = QPushButton("-θ")
+        jog.addWidget(self._rot_step, 0, 3)
+
+        btn_y_pos = QPushButton("▲ +Y")
+        btn_y_neg = QPushButton("▼ -Y")
+        btn_x_neg = QPushButton("◀ -X")
+        btn_x_pos = QPushButton("▶ +X")
+        btn_z_pos = QPushButton("▲ +Z")
+        btn_z_neg = QPushButton("▼ -Z")
+        btn_rot_pos = QPushButton("↻ +θ")
+        btn_rot_neg = QPushButton("↺ -θ")
+
+        for b in (btn_y_pos, btn_y_neg, btn_x_neg, btn_x_pos,
+                  btn_z_pos, btn_z_neg, btn_rot_pos, btn_rot_neg):
+            b.setMinimumHeight(32)
+            b.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+        # XY D-pad in cols 0-2, Z column in col 3
+        jog.addWidget(btn_y_pos, 1, 1)
+        jog.addWidget(btn_x_neg, 2, 0)
+        center = QLabel("XY");  center.setAlignment(Qt.AlignCenter)
+        center.setStyleSheet("color: #7aa7ff; font-weight: 600;")
+        jog.addWidget(center,   2, 1)
+        jog.addWidget(btn_x_pos, 2, 2)
+        jog.addWidget(btn_y_neg, 3, 1)
+        jog.addWidget(btn_z_pos, 1, 3)
+        z_lbl = QLabel("Z"); z_lbl.setAlignment(Qt.AlignCenter)
+        z_lbl.setStyleSheet("color: #7aa7ff; font-weight: 600;")
+        jog.addWidget(z_lbl,     2, 3)
+        jog.addWidget(btn_z_neg, 3, 3)
+
+        # Rotation row
+        jog.addWidget(btn_rot_neg, 4, 0, 1, 2)
+        jog.addWidget(btn_rot_pos, 4, 2, 1, 2)
+
+        btn_y_pos.clicked.connect(lambda: self._jog_y(-1))
+        btn_y_neg.clicked.connect(lambda: self._jog_y(+1))
+        btn_x_neg.clicked.connect(lambda: self._jog_x(+1))
+        btn_x_pos.clicked.connect(lambda: self._jog_x(-1))
+        btn_z_pos.clicked.connect(lambda: self._jog_z(+1))
+        btn_z_neg.clicked.connect(lambda: self._jog_z(-1))
         btn_rot_pos.clicked.connect(lambda: self._jog_theta(+1))
         btn_rot_neg.clicked.connect(lambda: self._jog_theta(-1))
-        grid.addWidget(btn_rot_pos, 4, 2)
-        grid.addWidget(btn_rot_neg, 4, 3)
 
-        # Zero + Stop
-        btn_zero = QPushButton("Zero XY")
-        btn_zero.setStyleSheet("background: #2a6099; color: white;")
+        v.addWidget(jog_box)
+
+        # ----- Absolute Move -----
+        abs_box = QGroupBox("Absolute Move (mm)"); abs_box.setProperty("accent", "yellow")
+        ag = QGridLayout(abs_box)
+        ag.setHorizontalSpacing(8); ag.setVerticalSpacing(8)
+        ag.setContentsMargins(10, 14, 10, 10)
+        for r in range(3):
+            ag.setRowMinimumHeight(r, 32)
+        ag.setColumnStretch(1, 1)
+        self._goto_x = QDoubleSpinBox(); self._goto_x.setRange(-100, 100); self._goto_x.setDecimals(4)
+        self._goto_y = QDoubleSpinBox(); self._goto_y.setRange(-100, 100); self._goto_y.setDecimals(4)
+        self._goto_z = QDoubleSpinBox(); self._goto_z.setRange(-100, 100); self._goto_z.setDecimals(4)
+        btn_go_x = QPushButton("Go X"); btn_go_x.clicked.connect(self._goto_x_clicked)
+        btn_go_y = QPushButton("Go Y"); btn_go_y.clicked.connect(self._goto_y_clicked)
+        btn_go_z = QPushButton("Go Z"); btn_go_z.clicked.connect(self._goto_z_clicked)
+        for b in (btn_go_x, btn_go_y, btn_go_z):
+            b.setMinimumHeight(28)
+        ag.addWidget(QLabel("X:"), 0, 0); ag.addWidget(self._goto_x, 0, 1); ag.addWidget(btn_go_x, 0, 2)
+        ag.addWidget(QLabel("Y:"), 1, 0); ag.addWidget(self._goto_y, 1, 1); ag.addWidget(btn_go_y, 1, 2)
+        ag.addWidget(QLabel("Z:"), 2, 0); ag.addWidget(self._goto_z, 2, 1); ag.addWidget(btn_go_z, 2, 2)
+        v.addWidget(abs_box)
+
+        # ----- Homing & Zero -----
+        home_box = QGroupBox("Homing / Zero"); home_box.setProperty("accent", "orange")
+        hg = QGridLayout(home_box)
+        hg.setHorizontalSpacing(8); hg.setVerticalSpacing(8)
+        hg.setContentsMargins(10, 14, 10, 10)
+        for r in range(3):
+            hg.setRowMinimumHeight(r, 32)
+
+        btn_home_x   = QPushButton("Home X")
+        btn_home_y   = QPushButton("Home Y")
+        btn_home_z   = QPushButton("Home Z")
+        btn_home_all = QPushButton("Home ALL (Z→X→Y)")
+        for b in (btn_home_x, btn_home_y, btn_home_z, btn_home_all):
+            b.setMinimumHeight(28)
+        btn_home_all.setStyleSheet(f"background: {C_ORANGE_D}; color: white; font-weight: 600;")
+        btn_zero = QPushButton("Zero XY at current position")
+        btn_zero.setStyleSheet(f"background: {C_TEAL_D}; color: #0a1412; font-weight: 600;")
+
+        btn_home_x.clicked.connect(lambda: self._run_in_thread(lambda: self._stage.home_x()))
+        btn_home_y.clicked.connect(lambda: self._run_in_thread(lambda: self._stage.home_y()))
+        btn_home_z.clicked.connect(lambda: self._run_in_thread(lambda: self._stage.home_z()))
+        btn_home_all.clicked.connect(lambda: self._run_in_thread(lambda: self._stage.home_all()))
         btn_zero.clicked.connect(self._zero_xy)
-        btn_stop = QPushButton("STOP")
-        btn_stop.setStyleSheet("background: #cc3333; color: white; font-weight: bold;")
+
+        hg.addWidget(btn_home_x, 0, 0)
+        hg.addWidget(btn_home_y, 0, 1)
+        hg.addWidget(btn_home_z, 0, 2)
+        hg.addWidget(btn_home_all, 1, 0, 1, 3)
+        hg.addWidget(btn_zero,     2, 0, 1, 3)
+        v.addWidget(home_box)
+
+        # ----- Emergency stop -----
+        btn_stop = QPushButton("⛔ EMERGENCY STOP")
+        btn_stop.setStyleSheet(
+            f"background: {C_RED}; color: white; font-weight: bold; "
+            f"font-size: 11pt; padding: 10px; border-radius: 4px; "
+            f"border: 1px solid #7f1d1d;"
+        )
+        btn_stop.setMinimumHeight(40)
         btn_stop.clicked.connect(self._emergency_stop)
-        grid.addWidget(btn_zero, 5, 0, 1, 2)
-        grid.addWidget(btn_stop, 5, 2, 1, 2)
+        v.addWidget(btn_stop)
 
-        # Position readback
-        self._pos_label = QLabel("X: --  Y: --  Z: --")
-        self._pos_label.setFont(QFont("Courier", 9))
-        grid.addWidget(self._pos_label, 6, 0, 1, 4)
-
-        self._pos_timer = QTimer()
+        self._pos_timer = QTimer(self)
         self._pos_timer.setInterval(500)
         self._pos_timer.timeout.connect(self._update_position)
+        self._pos_timer.start()
 
         return box
 
-    def _build_chip_scan_panel(self) -> QGroupBox:
-        box = QGroupBox("Chip Scan")
-        layout = QGridLayout(box)
+    # ------------------------------------------------------------------
+    # Measurement tab
+    # ------------------------------------------------------------------
 
-        layout.addWidget(QLabel("Layout:"), 0, 0)
-        self._layout_combo = QComboBox()
-        self._layout_combo.addItems(["twoTGNR", "doubleQDot"])
-        layout.addWidget(self._layout_combo, 0, 1)
+    def _build_settings_panel(self) -> QWidget:
+        root = QWidget()
+        v = QVBoxLayout(root)
+        v.setContentsMargins(8, 8, 8, 8)
+        v.setSpacing(10)
+        v.addWidget(self._build_sample_box())
+        v.addWidget(self._build_iv_box())
+        v.addWidget(self._build_gate_box())
+        v.addWidget(self._build_stability_box())
+        v.addWidget(self._build_needle_box())
+        v.addWidget(self._build_utilities_box())
+        v.addStretch()
+        return root
 
-        layout.addWidget(QLabel("Start device:"), 1, 0)
-        self._start_dev = QSpinBox()
-        self._start_dev.setRange(1, 999)
-        self._start_dev.setValue(1)
-        layout.addWidget(self._start_dev, 1, 1)
+    # --- Sample/save info (shared by single-device + chip-scan) ---
+    def _build_sample_box(self) -> QGroupBox:
+        box = QGroupBox("Sample"); box.setProperty("accent", "teal_d")
+        form = QFormLayout(box)
+        form.setContentsMargins(10, 16, 10, 10)
+        form.setVerticalSpacing(6)
 
-        layout.addWidget(QLabel("Sample name:"), 2, 0)
         self._sample_name = QLineEdit("sample")
-        layout.addWidget(self._sample_name, 2, 1)
-
-        layout.addWidget(QLabel("Save dir:"), 3, 0)
-        self._save_dir = QLineEdit("C:/Data")
-        layout.addWidget(self._save_dir, 3, 1)
-
-        self._test_move_check = QCheckBox("Test movement only")
-        layout.addWidget(self._test_move_check, 4, 0, 1, 2)
-
-        btn_start = QPushButton("START CHIP SCAN")
-        btn_start.setStyleSheet("background: #2a8a2a; color: white; font-weight: bold;")
-        btn_start.clicked.connect(self._start_chip_scan)
-        layout.addWidget(btn_start, 5, 0)
-
-        btn_stop = QPushButton("STOP")
-        btn_stop.setStyleSheet("background: #cc3333; color: white;")
-        btn_stop.clicked.connect(self._stop_chip_scan)
-        layout.addWidget(btn_stop, 5, 1)
-
-        self._scan_status = QLabel("Idle")
-        layout.addWidget(self._scan_status, 6, 0, 1, 2)
-
-        return box
-
-    def _build_measurement_panel(self) -> QGroupBox:
-        box = QGroupBox("Measurements")
-        layout = QVBoxLayout(box)
-
-        layout.addWidget(QLabel("Contact threshold:"))
-        self._threshold = QDoubleSpinBox()
+        self._save_dir    = QLineEdit("C:/Data")
+        self._threshold   = QDoubleSpinBox()
         self._threshold.setRange(0.0, 1e-6)
         self._threshold.setDecimals(10)
         self._threshold.setValue(1e-9)
         self._threshold.setSingleStep(1e-10)
-        layout.addWidget(self._threshold)
 
-        self._do_iv    = QCheckBox("IV sweep")
-        self._do_gate  = QCheckBox("Gate sweep")
-        self._do_stab  = QCheckBox("Stability diagram")
+        form.addRow("Sample name:", self._sample_name)
+        form.addRow("Save dir:",    self._save_dir)
+        form.addRow("Contact threshold (A):", self._threshold)
+        return box
+
+    # --- IV sweep ---
+    def _build_iv_box(self) -> QGroupBox:
+        box = QGroupBox("IV Sweep"); box.setProperty("accent", "orange")
+        form = QFormLayout(box)
+        form.setContentsMargins(10, 16, 10, 10)
+        form.setVerticalSpacing(6)
+
+        self._iv_start    = self._spin(-10, 10, 4, -0.5)
+        self._iv_max      = self._spin(-10, 10, 4,  0.5)
+        self._iv_points   = self._ispin(2, 100000, 501)
+        self._iv_scanrate = self._ispin(1000, 10_000_000, 450000)
+        self._iv_settle   = self._spin(0, 10, 3, 0.0)
+
+        form.addRow("Start V:",      self._iv_start)
+        form.addRow("Max V:",        self._iv_max)
+        form.addRow("Points:",       self._iv_points)
+        form.addRow("Scan rate:",    self._iv_scanrate)
+        form.addRow("Settling (s):", self._iv_settle)
+        return box
+
+    # --- Gate sweep ---
+    def _build_gate_box(self) -> QGroupBox:
+        box = QGroupBox("Gate Sweep"); box.setProperty("accent", "yellow")
+        form = QFormLayout(box)
+        form.setContentsMargins(10, 16, 10, 10)
+        form.setVerticalSpacing(6)
+
+        self._gate_start  = self._spin(-100, 100, 3, -50.0)
+        self._gate_max    = self._spin(-100, 100, 3,  50.0)
+        self._gate_points = self._ispin(2, 100000, 1001)
+        self._gate_bias   = self._spin(-10, 10, 4, 0.1)
+
+        form.addRow("Start V:",   self._gate_start)
+        form.addRow("Max V:",     self._gate_max)
+        form.addRow("Points:",    self._gate_points)
+        form.addRow("Fixed bias V:", self._gate_bias)
+        return box
+
+    # --- Stability diagram ---
+    def _build_stability_box(self) -> QGroupBox:
+        box = QGroupBox("Stability Diagram"); box.setProperty("accent", "red")
+        form = QFormLayout(box)
+        form.setContentsMargins(10, 16, 10, 10)
+        form.setVerticalSpacing(6)
+
+        self._stab_iv_min    = self._spin(-10, 10, 4, -0.2)
+        self._stab_iv_max    = self._spin(-10, 10, 4,  0.2)
+        self._stab_iv_points = self._ispin(2, 100000, 1001)
+        self._stab_gate_min  = self._spin(-100, 100, 3, -0.5)
+        self._stab_gate_max  = self._spin(-100, 100, 3,  0.5)
+        self._stab_gate_dV   = self._spin(0.0001, 10, 4, 0.001)
+        self._stab_gate_wait = self._spin(0, 10, 3, 0.1)
+
+        form.addRow("IV min V:",   self._stab_iv_min)
+        form.addRow("IV max V:",   self._stab_iv_max)
+        form.addRow("IV points:",  self._stab_iv_points)
+        form.addRow("Gate min V:", self._stab_gate_min)
+        form.addRow("Gate max V:", self._stab_gate_max)
+        form.addRow("Gate dV:",    self._stab_gate_dV)
+        form.addRow("Wait (s):",   self._stab_gate_wait)
+        return box
+
+    # --- Needle alignment ---
+    def _build_needle_box(self) -> QGroupBox:
+        box = QGroupBox("Needle Alignment"); box.setProperty("accent", "teal_d")
+        form = QFormLayout(box)
+        form.setContentsMargins(10, 16, 10, 10)
+        form.setVerticalSpacing(6)
+
+        self._needle_amp  = self._spin(0, 20, 2, 10.0)
+        self._needle_freq = self._spin(0.1, 1000, 2, 10.0)
+        self._needle_rt   = self._spin(0.1, 60, 2, 1.2)
+
+        form.addRow("Amplitude V:", self._needle_amp)
+        form.addRow("Frequency Hz:", self._needle_freq)
+        form.addRow("Runtime (s):", self._needle_rt)
+        return box
+
+    # --- Run selection + buttons ---
+    def _build_run_box(self) -> QGroupBox:
+        box = QGroupBox("Run"); box.setProperty("accent", "green")
+        grid = QGridLayout(box)
+        grid.setContentsMargins(10, 16, 10, 10)
+        grid.setHorizontalSpacing(8); grid.setVerticalSpacing(8)
+
+        self._do_iv   = QCheckBox("IV sweep")
+        self._do_gate = QCheckBox("Gate sweep")
+        self._do_stab = QCheckBox("Stability diagram")
         self._do_iv.setChecked(True)
-        layout.addWidget(self._do_iv)
-        layout.addWidget(self._do_gate)
-        layout.addWidget(self._do_stab)
+        grid.addWidget(self._do_iv,   0, 0)
+        grid.addWidget(self._do_gate, 0, 1)
+        grid.addWidget(self._do_stab, 0, 2)
 
-        btn_single = QPushButton("Run on current device")
+        # Single-device
+        grid.addWidget(QLabel("Device label:"), 1, 0)
+        self._single_dev_label = QLineEdit("dev1")
+        grid.addWidget(self._single_dev_label, 1, 1, 1, 2)
+
+        btn_single = QPushButton("▶  Run on current device")
+        btn_single.setStyleSheet(f"background: {C_TEAL_D}; color: #0a1412; font-weight: 700;")
+        btn_single.setMinimumHeight(32)
         btn_single.clicked.connect(self._run_single)
-        layout.addWidget(btn_single)
+        grid.addWidget(btn_single, 2, 0, 1, 3)
+
+        # Chip scan controls
+        grid.addWidget(self._hline(), 3, 0, 1, 3)
+        grid.addWidget(QLabel("Layout:"),       4, 0)
+        self._layout_combo = QComboBox()
+        self._layout_combo.addItems(list(LAYOUTS.keys()))
+        grid.addWidget(self._layout_combo,      4, 1, 1, 2)
+
+        grid.addWidget(QLabel("Start device:"), 5, 0)
+        self._start_dev = QSpinBox()
+        self._start_dev.setRange(1, 9999)
+        self._start_dev.setValue(1)
+        grid.addWidget(self._start_dev,         5, 1, 1, 2)
+
+        self._test_move_check = QCheckBox("Test movement only (no measurements)")
+        grid.addWidget(self._test_move_check,   6, 0, 1, 3)
+
+        btn_scan = QPushButton("▶  START CHIP SCAN")
+        btn_scan.setStyleSheet(f"background: {C_ORANGE}; color: #1a0a02; font-weight: 700;")
+        btn_scan.setMinimumHeight(36)
+        btn_scan.clicked.connect(self._start_chip_scan)
+        grid.addWidget(btn_scan, 7, 0, 1, 2)
+
+        btn_scan_stop = QPushButton("■  STOP")
+        btn_scan_stop.setStyleSheet(f"background: {C_RED}; color: white; font-weight: 700;")
+        btn_scan_stop.setMinimumHeight(36)
+        btn_scan_stop.clicked.connect(self._stop_chip_scan)
+        grid.addWidget(btn_scan_stop, 7, 2)
 
         return box
+
+    def _build_utilities_box(self) -> QGroupBox:
+        box = QGroupBox("Utilities"); box.setProperty("accent", "orange")
+        h = QHBoxLayout(box)
+        h.setContentsMargins(10, 16, 10, 10)
+        h.setSpacing(6)
+        btn_needle = QPushButton("Needle Align")
+        btn_needle.clicked.connect(self._run_needle_alignment)
+        btn_switch = QPushButton("Switch Box")
+        btn_switch.clicked.connect(self._toggle_switch_box)
+        btn_yield  = QPushButton("Analyze Yield")
+        btn_yield.clicked.connect(self._analyze_yield)
+        for b in (btn_needle, btn_switch, btn_yield):
+            b.setMinimumHeight(30)
+            h.addWidget(b)
+        return box
+
+    # --- widget factory helpers ---
+    def _spin(self, lo: float, hi: float, decimals: int, value: float) -> QDoubleSpinBox:
+        w = QDoubleSpinBox()
+        w.setRange(lo, hi); w.setDecimals(decimals); w.setValue(value)
+        return w
+
+    def _ispin(self, lo: int, hi: int, value: int) -> QSpinBox:
+        w = QSpinBox()
+        w.setRange(lo, hi); w.setValue(value)
+        return w
+
+    def _hline(self) -> QFrame:
+        f = QFrame()
+        f.setFrameShape(QFrame.HLine)
+        f.setStyleSheet("color: #3a3d43; background: #3a3d43; max-height: 1px;")
+        return f
 
     # ------------------------------------------------------------------
     # Camera
@@ -251,18 +593,25 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _connect_matlab(self):
+        threading.Thread(target=self._stage_init_thread, daemon=True).start()
         threading.Thread(target=self._matlab_init_thread, daemon=True).start()
+
+    def _stage_init_thread(self):
+        try:
+            self._stage = StageController()
+        except Exception as e:
+            QTimer.singleShot(0, lambda: QMessageBox.warning(
+                self, "Stage init warning",
+                f"Stage init error:\n{e}\n\nMotor controls unavailable."
+            ))
 
     def _matlab_init_thread(self):
         try:
             self._matlab.start()
-            self._stage = StageController()
-            self._pos_timer.start()
         except Exception as e:
-            # Post to GUI thread via a single-shot timer
             QTimer.singleShot(0, lambda: QMessageBox.warning(
-                self, "Init warning",
-                f"Hardware init error:\n{e}\n\nMotor/ADwin functions unavailable."
+                self, "MATLAB init warning",
+                f"MATLAB init error:\n{e}\n\nMeasurement routines unavailable."
             ))
 
     # ------------------------------------------------------------------
@@ -270,13 +619,13 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _jog_x(self, sign: int):
-        self._run_in_thread(lambda: self._stage.move_x(sign * self._step_mm.value() / 1000))
+        self._run_in_thread(lambda: self._stage.move_x(sign * self._step_mm.value()))
 
     def _jog_y(self, sign: int):
-        self._run_in_thread(lambda: self._stage.move_y(sign * self._step_mm.value() / 1000))
+        self._run_in_thread(lambda: self._stage.move_y(sign * self._step_mm.value()))
 
     def _jog_z(self, sign: int):
-        self._run_in_thread(lambda: self._stage.move_z(sign * self._step_mm.value() / 1000))
+        self._run_in_thread(lambda: self._stage.move_z(sign * self._step_mm.value()))
 
     def _jog_theta(self, sign: int):
         self._run_in_thread(lambda: self._stage.move_theta(sign * self._rot_step.value()))
@@ -284,6 +633,16 @@ class MainWindow(QMainWindow):
     def _zero_xy(self):
         if self._stage:
             self._stage.zero_xy()
+            self._update_position()
+
+    def _goto_x_clicked(self):
+        self._run_in_thread(lambda: self._stage.move_to_x(self._goto_x.value()))
+
+    def _goto_y_clicked(self):
+        self._run_in_thread(lambda: self._stage.move_to_y(self._goto_y.value()))
+
+    def _goto_z_clicked(self):
+        self._run_in_thread(lambda: self._stage.move_to_z(self._goto_z.value()))
 
     def _emergency_stop(self):
         self._flag_stop = True
@@ -294,9 +653,9 @@ class MainWindow(QMainWindow):
         if not self._stage:
             return
         try:
-            x = self._stage.get_position_x() * 1000
-            y = self._stage.get_position_y() * 1000
-            z = self._stage.get_position_z() * 1000
+            x = self._stage.get_position_x()
+            y = self._stage.get_position_y()
+            z = self._stage.get_position_z()
             self._pos_label.setText(f"X: {x:.3f} mm  Y: {y:.3f} mm  Z: {z:.3f} mm")
         except Exception:
             pass
@@ -329,6 +688,9 @@ class MainWindow(QMainWindow):
         self._stage.zero_xy()
         self._set_status(f"Scanning from device {self._chip_ref_dev_id}...")
 
+        # Generate coordinates from the selected layout
+        layout_cls = LAYOUTS[self._layout_combo.currentText()]
+        self._device_coordinates = generate_device_coordinates(layout_cls())
         coords = self._device_coordinates
         if not coords:
             self._set_status("No device coordinates loaded.")
@@ -355,7 +717,7 @@ class MainWindow(QMainWindow):
             self._set_status(f"Device {dev_id}")
 
             if not self._test_move_check.isChecked():
-                self._run_routines(dev_id, save_dir, sample)
+                self._run_routines(f"{sample}-{dev_id}")
 
         self._set_status("Scan complete." if not self._flag_stop else "Scan stopped.")
 
@@ -366,17 +728,109 @@ class MainWindow(QMainWindow):
         )
         event.set()
 
-    def _run_routines(self, dev_id: int, save_dir: str, sample: str):
-        dev_label = f"{sample}-{dev_id}"
+    # ------------------------------------------------------------------
+    # Utilities
+    # ------------------------------------------------------------------
+
+    def _run_needle_alignment(self):
+        if not self._matlab.is_started:
+            QMessageBox.warning(self, "MATLAB not ready",
+                                "MATLAB engine is still initializing.")
+            return
+        settings = self._build_settings("NeedleAlign", dev_label="align")
+        threading.Thread(
+            target=lambda: self._matlab.run_needle_alignment(settings),
+            daemon=True
+        ).start()
+
+    def _toggle_switch_box(self):
+        if not self._matlab.is_started:
+            QMessageBox.warning(self, "MATLAB not ready",
+                                "MATLAB engine is still initializing.")
+            return
+        threading.Thread(
+            target=self._matlab.run_switch_box, daemon=True
+        ).start()
+
+    def _analyze_yield(self):
+        folder = self._save_dir.text()
+        sample = self._sample_name.text()
+        if not folder or not sample:
+            QMessageBox.warning(self, "Missing info",
+                                "Enter save dir and sample name first.")
+            return
+        threshold = self._threshold.value()
+        result = process_yield(folder, sample, threshold=threshold)
+        if not result:
+            QMessageBox.information(self, "Yield", "No matching files found.")
+            return
+        passed = sum(1 for v in result.values() if v)
+        total  = len(result)
+        QMessageBox.information(
+            self, "Yield",
+            f"Yield for '{sample}': {passed}/{total} devices above {threshold:.2g} A"
+        )
+
+    def _build_settings(self, m_type: str, dev_label: str = "") -> dict:
+        """Common MATLAB settings struct (sample/save/ADwin + type-specific params)."""
+        base = {
+            "filename": dev_label or self._sample_name.text(),
+            "sample":   self._sample_name.text(),
+            "save_dir": self._save_dir.text(),
+            "type":     m_type,
+            "ADwin":    "GoldII",
+            "auto":     "FEMTO",
+            "res4p":    0,
+            "T":        300,
+        }
+        if m_type == "IV":
+            base.update({
+                "iv_startV":    self._iv_start.value(),
+                "iv_maxV":      self._iv_max.value(),
+                "iv_points":    self._iv_points.value(),
+                "iv_scanrate":  self._iv_scanrate.value(),
+                "iv_settling":  self._iv_settle.value(),
+            })
+        elif m_type == "Gatesweep":
+            base.update({
+                "gate_startV": self._gate_start.value(),
+                "gate_maxV":   self._gate_max.value(),
+                "gate_points": self._gate_points.value(),
+                "bias_setV":   self._gate_bias.value(),
+            })
+        elif m_type == "Stability":
+            base.update({
+                "iv_minV":       self._stab_iv_min.value(),
+                "iv_maxV":       self._stab_iv_max.value(),
+                "iv_points":     self._stab_iv_points.value(),
+                "gate_minV":     self._stab_gate_min.value(),
+                "gate_maxV":     self._stab_gate_max.value(),
+                "gate_dV":       self._stab_gate_dV.value(),
+                "gate_waiting":  self._stab_gate_wait.value(),
+            })
+        elif m_type == "NeedleAlign":
+            base.update({
+                "needle_amp":  self._needle_amp.value(),
+                "needle_freq": self._needle_freq.value(),
+                "needle_runtime": self._needle_rt.value(),
+            })
+        return base
+
+    def _run_routines(self, dev_label: str):
         try:
             if self._do_iv.isChecked():
-                self._matlab.run_iv(dev_label, save_dir)
+                self._set_status(f"{dev_label}: IV sweep…")
+                self._matlab.run_iv_aps2(self._build_settings("IV", dev_label))
             if self._do_gate.isChecked():
-                self._matlab.run_gate_sweep(dev_label, save_dir)
+                self._set_status(f"{dev_label}: Gate sweep…")
+                self._matlab.run_gate_aps2(self._build_settings("Gatesweep", dev_label))
             if self._do_stab.isChecked():
-                self._matlab.run_stability(dev_label, save_dir)
+                self._set_status(f"{dev_label}: Stability diagram…")
+                self._matlab.run_stability_aps2(self._build_settings("Stability", dev_label))
+            self._set_status(f"{dev_label}: done")
         except Exception as e:
-            print(f"Routine error on device {dev_id}: {e}")
+            self._set_status(f"Error on {dev_label}: {e}")
+            print(f"Routine error on {dev_label}: {e}")
 
     # ------------------------------------------------------------------
     # Single device run
@@ -386,12 +840,17 @@ class MainWindow(QMainWindow):
         if not self._sample_name.text():
             QMessageBox.warning(self, "No sample", "Enter a sample name.")
             return
-        dev_label = f"{self._sample_name.text()}-manual"
-        threading.Thread(
-            target=self._run_routines,
-            args=(dev_label, self._save_dir.text(), self._sample_name.text()),
-            daemon=True
-        ).start()
+        if not self._matlab.is_started:
+            QMessageBox.warning(self, "MATLAB not ready",
+                                "MATLAB engine is still initializing.")
+            return
+        if not (self._do_iv.isChecked() or self._do_gate.isChecked() or self._do_stab.isChecked()):
+            QMessageBox.warning(self, "No measurement selected",
+                                "Tick at least one measurement (IV / Gate / Stability).")
+            return
+        label = self._single_dev_label.text().strip() or "dev"
+        dev_label = f"{self._sample_name.text()}-{label}"
+        threading.Thread(target=self._run_routines, args=(dev_label,), daemon=True).start()
 
     # ------------------------------------------------------------------
     # Helpers
@@ -402,7 +861,7 @@ class MainWindow(QMainWindow):
             threading.Thread(target=fn, daemon=True).start()
 
     def _set_status(self, msg: str):
-        QTimer.singleShot(0, lambda: self._scan_status.setText(msg))
+        QTimer.singleShot(0, lambda: self._status_bar.showMessage(msg))
 
     # ------------------------------------------------------------------
     # Cleanup
