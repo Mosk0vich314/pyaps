@@ -7,6 +7,7 @@ Units: mm for X/Y/Z, degrees for Rot.
 
 from __future__ import annotations
 import dataclasses
+import time
 from dataclasses import dataclass
 from typing import Optional
 
@@ -39,7 +40,7 @@ DEFAULT_CONFIG = {
 
 
 class StageController:
-    WAIT_TIMEOUT = 10.0   # seconds per move
+    WAIT_TIMEOUT = 60.0   # seconds per move
 
     def __init__(self, overrides: Optional[dict] = None):
         print("--- StageController: Initializing 4 Motors...")
@@ -121,9 +122,10 @@ class StageController:
         if self.motor_x: self.motor_x.home()
         if self.motor_y: self.motor_y.home()
         
-        # 3. Wait for both to finish.
-        if self.motor_x: self.motor_x.wait_until_done(self.HOME_TIMEOUT)
-        if self.motor_y: self.motor_y.wait_until_done(self.HOME_TIMEOUT)
+        # 3. Wait for both to finish (shared deadline so total wait ≤ HOME_TIMEOUT).
+        deadline = time.monotonic() + self.HOME_TIMEOUT
+        if self.motor_x: self.motor_x.wait_until_done(max(0.0, deadline - time.monotonic()))
+        if self.motor_y: self.motor_y.wait_until_done(max(0.0, deadline - time.monotonic()))
         
         # 4. Zero the coordinate system for both.
         if self.motor_x: self.motor_x.zero_position()

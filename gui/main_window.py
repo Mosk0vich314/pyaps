@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QGroupBox, QPushButton, QLabel, QDoubleSpinBox, QSpinBox,
     QComboBox, QLineEdit, QCheckBox, QSizePolicy, QMessageBox,
     QScrollArea, QFrame, QTabWidget, QStatusBar, QFormLayout, QTextEdit,
+    QSlider,
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QObject
 from PySide6.QtGui import QImage, QPixmap, QFont
@@ -160,7 +161,7 @@ class _Signals(QObject):
 # ---------------------------------------------------------------------------
 
 # Versioning for tracking updates
-VERSION = "1.0.6"
+VERSION = "1.0.9"
 
 class MainWindow(QMainWindow):
     UNIT_MULT = 1e-3   # µm → mm (device coordinates are in µm, stage works in mm)
@@ -169,6 +170,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle(f"PYAPS — Probe Station Control (v{VERSION})")
         self.setMinimumSize(1280, 860)
+        self.resize(1720, 1000)
         self.setStyleSheet(APP_STYLESHEET)
 
         self._stage: StageController | None = None
@@ -210,6 +212,7 @@ class MainWindow(QMainWindow):
         cam = self._build_camera_panel()
         cam.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         left.addWidget(cam, stretch=1)
+        left.addWidget(self._build_camera_controls(), stretch=0)
         left.addWidget(self._build_run_box(), stretch=0)
 
         # Right column: tabs — Stage / Settings / Console
@@ -241,13 +244,109 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(10, 16, 10, 10)
         self._camera_label = QLabel("No camera feed")
         self._camera_label.setAlignment(Qt.AlignCenter)
-        self._camera_label.setMinimumSize(480, 300)
+        self._camera_label.setMinimumSize(640, 480)
         self._camera_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._camera_label.setStyleSheet(
             f"background: #0a0c0f; color: {C_TEAL_D}; border: 1px solid {C_BORDER}; border-radius: 4px;"
         )
         layout.addWidget(self._camera_label)
         return box
+
+    def _build_camera_controls(self) -> QGroupBox:
+        box = QGroupBox("Camera Controls")
+        box.setProperty("accent", "teal_d")
+        grid = QGridLayout(box)
+        grid.setContentsMargins(10, 14, 10, 8)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(4)
+
+        # Row 0: Resolution + Auto-exposure
+        grid.addWidget(QLabel("Resolution:"), 0, 0)
+        self._cam_res_combo = QComboBox()
+        self._cam_res_combo.addItem("(discovering...)")
+        self._cam_res_combo.setEnabled(False)
+        self._cam_res_combo.currentIndexChanged.connect(self._on_resolution_changed)
+        grid.addWidget(self._cam_res_combo, 0, 1, 1, 2)
+
+        self._cam_auto_exp = QCheckBox("Auto exposure")
+        self._cam_auto_exp.setChecked(True)
+        self._cam_auto_exp.toggled.connect(self._on_auto_exp_toggled)
+        grid.addWidget(self._cam_auto_exp, 0, 3, 1, 2)
+
+        # Row 1: Exposure | Brightness
+        grid.addWidget(QLabel("Exposure:"), 1, 0)
+        self._cam_exp_slider = QSlider(Qt.Horizontal)
+        self._cam_exp_slider.setRange(-13, 0)
+        self._cam_exp_slider.valueChanged.connect(self._on_exposure_changed)
+        grid.addWidget(self._cam_exp_slider, 1, 1)
+        self._cam_exp_val = QLabel("—")
+        self._cam_exp_val.setMinimumWidth(30)
+        grid.addWidget(self._cam_exp_val, 1, 2)
+
+        grid.addWidget(QLabel("Brightness:"), 1, 3)
+        self._cam_bri_slider = QSlider(Qt.Horizontal)
+        self._cam_bri_slider.setRange(-128, 255)  # widen since cameras vary
+        self._cam_bri_slider.valueChanged.connect(self._on_brightness_changed)
+        grid.addWidget(self._cam_bri_slider, 1, 4)
+        self._cam_bri_val = QLabel("—")
+        self._cam_bri_val.setMinimumWidth(40)
+        grid.addWidget(self._cam_bri_val, 1, 5)
+
+        return box
+
+    def _on_resolution_changed(self, idx: int):
+        data = self._cam_res_combo.itemData(idx)
+        if data is None:
+            return
+        w, h = data
+        self._camera.set_resolution(w, h)
+
+    def _on_auto_exp_toggled(self, enabled: bool):
+        self._camera.set_auto_exposure(enabled)
+        self._cam_exp_slider.setEnabled(not enabled)
+        print(f"[camera] auto-exposure {'ON' if enabled else 'OFF'}")
+
+    def _on_exposure_changed(self, val: int):
+        self._cam_exp_val.setText(str(val))
+        self._camera.set_exposure(float(val))
+
+    def _on_brightness_changed(self, val: int):
+        self._cam_bri_val.setText(str(val))
+        self._camera.set_brightness(float(val))
+
+    def _populate_resolutions(self):
+        # Force auto-exposure ON at startup so the image is usable out of the box.
+        self._camera.set_auto_exposure(True)
+
+        # Use the predefined list instead of probing — probing disrupts the camera pipeline.
+        from hardware.camera import _PROBE_RESOLUTIONS
+        cur_w, cur_h = self._camera.get_current_resolution()
+        self._cam_res_combo.blockSignals(True)
+        self._cam_res_combo.clear()
+        for w, h in _PROBE_RESOLUTIONS:
+            self._cam_res_combo.addItem(f"{w} x {h}", (w, h))
+        for i in range(self._cam_res_combo.count()):
+            if self._cam_res_combo.itemData(i) == (cur_w, cur_h):
+                self._cam_res_combo.setCurrentIndex(i)
+                break
+        self._cam_res_combo.setEnabled(True)
+        self._cam_res_combo.blockSignals(False)
+
+        # Sync sliders to the camera's actual current values (single get each — cheap).
+        import cv2 as _cv2
+        cur_exp = int(self._camera.get_property(_cv2.CAP_PROP_EXPOSURE))
+        cur_bri = int(self._camera.get_property(_cv2.CAP_PROP_BRIGHTNESS))
+        print(f"[camera] current exposure={cur_exp}  brightness={cur_bri}")
+
+        self._cam_exp_slider.blockSignals(True)
+        self._cam_exp_slider.setValue(max(-13, min(0, cur_exp)))
+        self._cam_exp_slider.blockSignals(False)
+        self._cam_exp_val.setText(str(self._cam_exp_slider.value()))
+
+        self._cam_bri_slider.blockSignals(True)
+        self._cam_bri_slider.setValue(max(-128, min(255, cur_bri)))
+        self._cam_bri_slider.blockSignals(False)
+        self._cam_bri_val.setText(str(self._cam_bri_slider.value()))
 
     def _build_motor_panel(self) -> QGroupBox:
         box = QGroupBox("Stage")
@@ -281,6 +380,7 @@ class MainWindow(QMainWindow):
         self._step_mm.setRange(0.001, 10.0)
         self._step_mm.setValue(0.1)
         self._step_mm.setDecimals(3)
+        self._step_mm.setSingleStep(0.01)
         jog.addWidget(self._step_mm, 0, 1)
         jog.addWidget(QLabel("Rot step (°):"), 0, 2)
         self._rot_step = QDoubleSpinBox()
@@ -339,9 +439,9 @@ class MainWindow(QMainWindow):
         for r in range(3):
             ag.setRowMinimumHeight(r, 32)
         ag.setColumnStretch(1, 1)
-        self._goto_x = QDoubleSpinBox(); self._goto_x.setRange(-100, 100); self._goto_x.setDecimals(4)
-        self._goto_y = QDoubleSpinBox(); self._goto_y.setRange(-100, 100); self._goto_y.setDecimals(4)
-        self._goto_z = QDoubleSpinBox(); self._goto_z.setRange(-100, 100); self._goto_z.setDecimals(4)
+        self._goto_x = QDoubleSpinBox(); self._goto_x.setRange(-100, 100); self._goto_x.setDecimals(4); self._goto_x.setSingleStep(0.1)
+        self._goto_y = QDoubleSpinBox(); self._goto_y.setRange(-100, 100); self._goto_y.setDecimals(4); self._goto_y.setSingleStep(0.1)
+        self._goto_z = QDoubleSpinBox(); self._goto_z.setRange(-100, 100); self._goto_z.setDecimals(4); self._goto_z.setSingleStep(0.1)
         btn_go_x = QPushButton("Go X"); btn_go_x.clicked.connect(self._goto_x_clicked)
         btn_go_y = QPushButton("Go Y"); btn_go_y.clicked.connect(self._goto_y_clicked)
         btn_go_z = QPushButton("Go Z"); btn_go_z.clicked.connect(self._goto_z_clicked)
@@ -687,6 +787,7 @@ class MainWindow(QMainWindow):
         self._camera.on_frame = lambda f: self._signals.new_frame.emit(f)
         try:
             self._camera.start()
+            QTimer.singleShot(500, self._populate_resolutions)
         except RuntimeError as e:
             self._camera_label.setText(f"Camera error:\n{e}")
 
