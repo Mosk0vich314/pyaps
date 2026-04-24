@@ -99,20 +99,16 @@ class StepperMotor:
     # ------------------------------------------------------------------
 
     def move_relative_units(self, value: float):
-        # conv = mm/encoder_count; move_relative takes motor steps.
-        # motor_steps = encoder_counts × |enc_ratio|
-        encoder_counts = value / self.conversion_factor
-        motor_steps = round(encoder_counts * abs(self.encoder_ratio))
-        if self.debug:
-            _log(f"[{self.name}] move_relative_units({value}) -> enc={encoder_counts:.1f} -> motor_steps={motor_steps}")
-        self.move_relative(motor_steps)
+        # steps = units / (units/step)
+        # For relative moves, we use motor steps.
+        steps = round(value / self.conversion_factor) if self.conversion_factor != 0 else 0
+        print(f"[{self.name}] REL {value:+.6f} mm  →  steps={steps:+d}")
+        self.move_relative(steps)
 
     def move_absolute_units(self, value: float):
-        encoder_counts = value / self.conversion_factor
-        motor_steps = round(encoder_counts * abs(self.encoder_ratio))
-        if self.debug:
-            _log(f"[{self.name}] move_absolute_units({value}) -> enc={encoder_counts:.1f} -> motor_steps={motor_steps}")
-        self.move_absolute(motor_steps)
+        steps = round(value / self.conversion_factor) if self.conversion_factor != 0 else 0
+        print(f"[{self.name}] ABS {value:.6f} mm  →  steps={steps:+d}")
+        self.move_absolute(steps)
 
     # Aliases for semantic clarity (matching MATLAB names).
     def move_relative_mms(self, mms: float):     self.move_relative_units(mms)
@@ -161,15 +157,8 @@ class StepperMotor:
         """Return current position in calibrated units (mm or degrees)."""
         resp = self._query("get_position")
         raw_val = int(resp) if resp.lstrip("-").isdigit() else 0
-        
-        # If the quadrature encoder is enabled, the hardware returns encoder counts.
-        # We must convert counts back to motor steps using the encoder ratio.
-        if self.encoder_type == 2:
-            steps = raw_val * self.encoder_ratio
-        else:
-            steps = raw_val
-            
-        return steps * self.conversion_factor
+        # raw = encoder counts; enc_ratio converts to motor steps; conv converts to mm
+        return raw_val * self.encoder_ratio * self.conversion_factor
 
     # ------------------------------------------------------------------
     # Basic commands

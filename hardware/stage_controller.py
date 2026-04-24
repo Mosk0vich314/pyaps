@@ -24,14 +24,17 @@ class AxisConfig:
     lim_upper: int
     home_sw: int
     enc_type: int
+    velocity: int = 100000
 
 
 # Values copied from StageController.m GetDefaultConfig() (MAC_Setup_v1.0_current20260107.xml)
+# X/Y inverted to follow Cross (probe) position on chip (conv flipped)
+# enc_ratio remains original to handle reverse-mounted encoders
 DEFAULT_CONFIG = {
-    "X":   AxisConfig(port="COM5", address=1, conv=3.98438e-6, enc_ratio=-6.42,    home_dir=1, lim_lower=4, lim_upper=2, home_sw=4, enc_type=2),
-    "Y":   AxisConfig(port="COM6", address=2, conv=3.98438e-6, enc_ratio=-6.42,    home_dir=1, lim_lower=4, lim_upper=0, home_sw=4, enc_type=2),
-    "Z":   AxisConfig(port="COM8", address=3, conv=9.75e-6,    enc_ratio=2.56261,  home_dir=1, lim_lower=3, lim_upper=1, home_sw=3, enc_type=2),
-    "Rot": AxisConfig(port="COM7", address=0, conv=3.9062e-5,  enc_ratio=1.0,      home_dir=0, lim_lower=0, lim_upper=0, home_sw=2, enc_type=0),
+    "X":   AxisConfig(port="COM5", address=1, conv=-3.98438e-6, enc_ratio=-6.42,   home_dir=1, lim_lower=4, lim_upper=2, home_sw=4, enc_type=2),
+    "Y":   AxisConfig(port="COM6", address=2, conv=-3.98438e-6, enc_ratio=-6.42,   home_dir=1, lim_lower=4, lim_upper=0, home_sw=4, enc_type=2),
+    "Z":   AxisConfig(port="COM8", address=3, conv=9.75e-6,     enc_ratio=2.56261, home_dir=1, lim_lower=3, lim_upper=1, home_sw=3, enc_type=2, velocity=80000),
+    "Rot": AxisConfig(port="COM7", address=0, conv=3.9062e-5,   enc_ratio=1.0,     home_dir=0, lim_lower=0, lim_upper=0, home_sw=2, enc_type=0),
 }
 
 
@@ -58,8 +61,11 @@ class StageController:
             self.motor_z   = self._init_axis("Z",   cfg["Z"])
             self.motor_rot = self._init_axis("Rot", cfg["Rot"])
             from hardware.stepper_motor import _LOG_PATH
-            open(_LOG_PATH, "w").close()   # clear log
-            self.motor_y.debug = True   # DEBUG: log Y serial traffic → motor_debug.log
+            open(_LOG_PATH, "w").close()
+            self.motor_x.debug = True
+            self.motor_y.debug = True
+            self.motor_z.debug = True
+            self.motor_rot.debug = True
             self.is_connected = True
             print("--- StageController: All 4 Motors Ready.")
         except Exception as e:
@@ -98,7 +104,7 @@ class StageController:
     # Homing (finds the limit/home switch, then zeroes position)
     # ------------------------------------------------------------------
 
-    HOME_TIMEOUT = 120.0  # homing may take a while
+    HOME_TIMEOUT = 300.0  # homing may take a while
 
     def home_x(self):   self._home(self.motor_x)
     def home_y(self):   self._home(self.motor_y)
@@ -106,10 +112,23 @@ class StageController:
     def home_rot(self): self._home(self.motor_rot)
 
     def home_all(self):
-        # Home Z first to avoid crashing into the sample while X/Y move.
+        # 1. Safety first: Home Z first to avoid crashing into the sample while X/Y move.
+        print("[Stage] Homing Z (Safety first)...")
         self.home_z()
-        self.home_x()
-        self.home_y()
+        
+        # 2. Home X and Y simultaneously.
+        print("[Stage] Homing X and Y in parallel...")
+        if self.motor_x: self.motor_x.home()
+        if self.motor_y: self.motor_y.home()
+        
+        # 3. Wait for both to finish.
+        if self.motor_x: self.motor_x.wait_until_done(self.HOME_TIMEOUT)
+        if self.motor_y: self.motor_y.wait_until_done(self.HOME_TIMEOUT)
+        
+        # 4. Zero the coordinate system for both.
+        if self.motor_x: self.motor_x.zero_position()
+        if self.motor_y: self.motor_y.zero_position()
+        print("[Stage] Home ALL complete.")
 
     def _home(self, motor: Optional[StepperMotor]):
         if motor is None:
@@ -148,6 +167,7 @@ class StageController:
         m.limit_upper       = c.lim_upper
         m.home_switch       = c.home_sw
         m.encoder_type      = c.enc_type
+        m.velocity          = c.velocity
         m.apply_settings()
         m.drive_on()
         return m
@@ -155,17 +175,25 @@ class StageController:
     def _move(self, motor: Optional[StepperMotor], value: float):
         if motor is None:
             return
+        pos_before = motor.get_position()
+        print(f"[Stage] RELATIVE {motor.name}: target={value:+.4f}, pos_before={pos_before:.4f}")
         if "Rot" in motor.name:
             motor.move_relative_degrees(value)
         else:
             motor.move_relative_mms(value)
         motor.wait_until_done(self.WAIT_TIMEOUT)
+        pos_after = motor.get_position()
+        print(f"[Stage] {motor.name}: pos_after={pos_after:.4f}  Δ={pos_after-pos_before:+.4f}")
 
     def _move_abs(self, motor: Optional[StepperMotor], value: float):
         if motor is None:
             return
+        pos_before = motor.get_position()
+        print(f"[Stage] ABSOLUTE {motor.name}: target={value:.4f}, pos_before={pos_before:.4f}")
         if "Rot" in motor.name:
             motor.move_absolute_degrees(value)
         else:
             motor.move_absolute_mms(value)
         motor.wait_until_done(self.WAIT_TIMEOUT)
+        pos_after = motor.get_position()
+        print(f"[Stage] {motor.name}: pos_after={pos_after:.4f}  Δ={pos_after-pos_before:+.4f}")

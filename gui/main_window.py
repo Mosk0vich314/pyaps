@@ -4,15 +4,21 @@ Replaces STG2.mlapp with a PySide6 GUI.
 """
 
 from __future__ import annotations
+import io
+import queue as _queue
+import sys
 import threading
 import numpy as np
 import cv2
+
+# Thread-safe console queue — any thread can put a line here
+_console_q: _queue.SimpleQueue = _queue.SimpleQueue()
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QGridLayout,
     QGroupBox, QPushButton, QLabel, QDoubleSpinBox, QSpinBox,
     QComboBox, QLineEdit, QCheckBox, QSizePolicy, QMessageBox,
-    QScrollArea, QFrame, QTabWidget, QStatusBar, QFormLayout,
+    QScrollArea, QFrame, QTabWidget, QStatusBar, QFormLayout, QTextEdit,
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QObject
 from PySide6.QtGui import QImage, QPixmap, QFont
@@ -120,6 +126,28 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ background: 
 
 
 # ---------------------------------------------------------------------------
+# stdout redirector — only writes to queue, never touches Qt from write()
+# ---------------------------------------------------------------------------
+
+class _ConsoleIO(io.TextIOBase):
+    def __init__(self):
+        super().__init__()
+        self._buf = ""
+
+    def write(self, s: str) -> int:
+        self._buf += s
+        while "\n" in self._buf:
+            line, self._buf = self._buf.split("\n", 1)
+            _console_q.put(line)
+        return len(s)
+
+    def flush(self):
+        if self._buf:
+            _console_q.put(self._buf)
+            self._buf = ""
+
+
+# ---------------------------------------------------------------------------
 # Signal bridge (camera runs in a background thread → must post to GUI thread)
 # ---------------------------------------------------------------------------
 
@@ -131,12 +159,15 @@ class _Signals(QObject):
 # Main window
 # ---------------------------------------------------------------------------
 
+# Versioning for tracking updates
+VERSION = "1.0.6"
+
 class MainWindow(QMainWindow):
     UNIT_MULT = 1e-3   # µm → mm (device coordinates are in µm, stage works in mm)
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("PYAPS — Probe Station Control")
+        self.setWindowTitle(f"PYAPS — Probe Station Control (v{VERSION})")
         self.setMinimumSize(1280, 860)
         self.setStyleSheet(APP_STYLESHEET)
 
@@ -152,6 +183,13 @@ class MainWindow(QMainWindow):
         self._device_coordinates: dict | None = None
 
         self._build_ui()
+        # Redirect stdout to queue (safe: write() never touches Qt)
+        sys.stdout = _ConsoleIO()
+        # QTimer drains the queue in the main thread every 100 ms
+        self._console_timer = QTimer(self)
+        self._console_timer.setInterval(100)
+        self._console_timer.timeout.connect(self._drain_console)
+        self._console_timer.start()
         self._start_camera()
         self._connect_matlab()
 
@@ -174,11 +212,12 @@ class MainWindow(QMainWindow):
         left.addWidget(cam, stretch=1)
         left.addWidget(self._build_run_box(), stretch=0)
 
-        # Right column: tabs — Stage / Settings
+        # Right column: tabs — Stage / Settings / Console
         tabs = QTabWidget()
         tabs.setMinimumWidth(440)
-        tabs.addTab(self._wrap_scroll(self._build_motor_panel()),          "Stage")
-        tabs.addTab(self._wrap_scroll(self._build_settings_panel()),       "Measurement Settings")
+        tabs.addTab(self._wrap_scroll(self._build_motor_panel()),    "Stage")
+        tabs.addTab(self._wrap_scroll(self._build_settings_panel()), "Measurement Settings")
+        tabs.addTab(self._build_console_panel(),                     "Console")
 
         root.addLayout(left, stretch=3)
         root.addWidget(tabs, stretch=2)
@@ -281,10 +320,10 @@ class MainWindow(QMainWindow):
         jog.addWidget(btn_rot_neg, 4, 0, 1, 2)
         jog.addWidget(btn_rot_pos, 4, 2, 1, 2)
 
-        btn_y_pos.clicked.connect(lambda: self._jog_y(-1))
-        btn_y_neg.clicked.connect(lambda: self._jog_y(+1))
-        btn_x_neg.clicked.connect(lambda: self._jog_x(+1))
-        btn_x_pos.clicked.connect(lambda: self._jog_x(-1))
+        btn_y_pos.clicked.connect(lambda: self._jog_y(+1))
+        btn_y_neg.clicked.connect(lambda: self._jog_y(-1))
+        btn_x_neg.clicked.connect(lambda: self._jog_x(-1))
+        btn_x_pos.clicked.connect(lambda: self._jog_x(+1))
         btn_z_pos.clicked.connect(lambda: self._jog_z(+1))
         btn_z_neg.clicked.connect(lambda: self._jog_z(-1))
         btn_rot_pos.clicked.connect(lambda: self._jog_theta(+1))
@@ -372,6 +411,7 @@ class MainWindow(QMainWindow):
         v.setContentsMargins(8, 8, 8, 8)
         v.setSpacing(10)
         v.addWidget(self._build_sample_box())
+        v.addWidget(self._build_stage_settings_box())
         v.addWidget(self._build_iv_box())
         v.addWidget(self._build_gate_box())
         v.addWidget(self._build_stability_box())
@@ -379,6 +419,47 @@ class MainWindow(QMainWindow):
         v.addWidget(self._build_utilities_box())
         v.addStretch()
         return root
+
+    def _build_stage_settings_box(self) -> QGroupBox:
+        box = QGroupBox("Stage Hardware Settings"); box.setProperty("accent", "teal")
+        form = QFormLayout(box)
+        form.setContentsMargins(10, 16, 10, 10)
+        form.setVerticalSpacing(6)
+
+        self._motor_vel = self._ispin(1000, 1000000, 100000)
+        self._motor_acc = self._ispin(100, 100000, 5000)
+        
+        btn_apply = QPushButton("Apply Velocity/Accel to ALL Motors")
+        btn_apply.clicked.connect(self._apply_motor_settings)
+        btn_apply.setStyleSheet(f"background: {C_TEAL_D}; color: #0a1412; font-weight: 600;")
+
+        form.addRow("Velocity (microsteps/s):", self._motor_vel)
+        form.addRow("Acceleration (steps/s²):", self._motor_acc)
+        form.addRow(btn_apply)
+        return box
+
+    def _apply_motor_settings(self):
+        if not self._stage:
+            QMessageBox.warning(self, "Not ready", "Stage not initialized.")
+            return
+        vel = self._motor_vel.value()
+        acc = self._motor_acc.value()
+        
+        def task():
+            print(f"--- Applying hardware settings: Vel={vel}, Acc={acc} ---")
+            for m in (self._stage.motor_x, self._stage.motor_y, self._stage.motor_z, self._stage.motor_rot):
+                if m:
+                    try:
+                        m.velocity = vel
+                        m.acceleration = acc
+                        m.set_setting("velocity", vel)
+                        m.set_setting("acceleration", acc)
+                        print(f"[{m.name}] Applied.")
+                    except Exception as e:
+                        print(f"[{m.name}] Failed: {e}")
+            print("--- Settings applied. ---")
+            
+        threading.Thread(target=task, daemon=True).start()
 
     # --- Sample/save info (shared by single-device + chip-scan) ---
     def _build_sample_box(self) -> QGroupBox:
@@ -549,6 +630,37 @@ class MainWindow(QMainWindow):
             b.setMinimumHeight(30)
             h.addWidget(b)
         return box
+
+    def _build_console_panel(self) -> QWidget:
+        root = QWidget()
+        v = QVBoxLayout(root)
+        v.setContentsMargins(8, 8, 8, 8)
+        v.setSpacing(4)
+        self._console = QTextEdit()
+        self._console.setReadOnly(True)
+        self._console.setFont(QFont("Consolas", 9))
+        self._console.setStyleSheet(
+            f"background: #0a0c0f; color: #a0e8a0; border: 1px solid {C_BORDER};"
+        )
+        btn_clear = QPushButton("Clear")
+        btn_clear.setMaximumWidth(80)
+        btn_clear.clicked.connect(self._console.clear)
+        v.addWidget(self._console, stretch=1)
+        v.addWidget(btn_clear)
+        return root
+
+    def _drain_console(self):
+        updated = False
+        try:
+            while True:
+                line = _console_q.get_nowait()
+                self._console.append(line)
+                updated = True
+        except _queue.Empty:
+            pass
+        if updated:
+            sb = self._console.verticalScrollBar()
+            sb.setValue(sb.maximum())
 
     # --- widget factory helpers ---
     def _spin(self, lo: float, hi: float, decimals: int, value: float) -> QDoubleSpinBox:
@@ -869,6 +981,8 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self._flag_stop = True
+        self._console_timer.stop()
+        sys.stdout = sys.__stdout__
         self._camera.stop()
         self._matlab.stop()
         if self._stage:

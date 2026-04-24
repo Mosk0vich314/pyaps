@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<struct>
+    <Video>
+        <DeviceID>1</DeviceID>
+        <VidResX>3840</VidResX>
+        <VidResY>2160</VidResY>
+        <Saturation>17</Saturation>
+        <WhiteBalance>6304</WhiteBalance>
+        <Exposure>-4</Exposure>
+        <Gain>255</Gain>
+        <WhiteBalanceMode>manual</WhiteBalanceMode>
+        <Contrast>16</Contrast>
+        <Brightness>16</Brightness>
+        <ExposureMode>manual</ExposureMode>
+    </Video>
+</struct>

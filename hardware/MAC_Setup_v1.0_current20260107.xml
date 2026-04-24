@@ -1,0 +1,680 @@
+<?xml version='1.0' standalone='yes' ?>
+<LVData xmlns="http://www.ni.com/LVData">
+<Version>21.0.1f2</Version>
+<Cluster>
+<Name>MAC Setup</Name>
+<NumElts>2</NumElts>
+<Array>
+<Name>Motors</Name>
+<Dimsize>4</Dimsize>
+<Cluster>
+<Name>Motor Setup</Name>
+<NumElts>3</NumElts>
+<Cluster>
+<Name>ESCO Com Setup</Name>
+<NumElts>4</NumElts>
+<Refnum>
+<Name>Port</Name>
+<RefKind>VISA</RefKind>
+<Val>COM7</Val>
+</Refnum>
+<Boolean>
+<Name>Sim?</Name>
+<Val>0</Val>
+</Boolean>
+<U32>
+<Name>Address</Name>
+<Val>1</Val>
+</U32>
+<String>
+<Name>Name</Name>
+<Val>X</Val>
+</String>
+</Cluster>
+<Cluster>
+<Name>ESCO Motor Parameters</Name>
+<NumElts>12</NumElts>
+<EW>
+<Name>Motor Current</Name>
+<Choice>0.2 A</Choice>
+<Choice>0.5 A</Choice>
+<Choice>0.75 A</Choice>
+<Choice>1 A</Choice>
+<Choice>1.5 A</Choice>
+<Choice>2 A</Choice>
+<Val>3</Val>
+</EW>
+<EW>
+<Name>Hold Current</Name>
+<Choice>0%</Choice>
+<Choice>25%</Choice>
+<Choice>50%</Choice>
+<Choice>100%</Choice>
+<Val>0</Val>
+</EW>
+<EW>
+<Name>Microstepping</Name>
+<Choice>256</Choice>
+<Choice>128</Choice>
+<Choice>64</Choice>
+<Choice>32</Choice>
+<Choice>16</Choice>
+<Choice>8</Choice>
+<Choice>4</Choice>
+<Choice>2</Choice>
+<Choice>None</Choice>
+<Val>0</Val>
+</EW>
+<DBL>
+<Name>Conversion [Units/µStep]</Name>
+<Val>3.98438000000000E-6</Val>
+</DBL>
+<U32>
+<Name>Velocity [µSteps/s]</Name>
+<Val>100000</Val>
+</U32>
+<U32>
+<Name>Acceleration [µSteps/s²]</Name>
+<Val>5000</Val>
+</U32>
+<EW>
+<Name>Encoder Type</Name>
+<Choice>Software</Choice>
+<Choice>Absolute (SSI)</Choice>
+<Choice>Quadrature</Choice>
+<Val>2</Val>
+</EW>
+<FXP>
+<Name>Encoder Ratio [µStep/Pulses]</Name>
+<WordLength>32</WordLength>
+<IntegerLength>16</IntegerLength>
+<Sign>Signed</Sign>
+<Val>-0x0000000000066b85</Val>
+<Minimum>-0x0000000080000000</Minimum>
+<Maximum>0x000000007fffffff</Maximum>
+<Delta>
+<WordLength>32</WordLength>
+<IntegerLength>16</IntegerLength>
+<Val>0x0000000000000001</Val>
+</Delta>
+</FXP>
+<EW>
+<Name>Lower Limit</Name>
+<Choice>None</Choice>
+<Choice>Input 1</Choice>
+<Choice>Input 1 Inverted</Choice>
+<Choice>Input 2</Choice>
+<Choice>Input 2 Inverted</Choice>
+<Choice>Input 3</Choice>
+<Choice>Input 3 Inverted</Choice>
+<Val>4</Val>
+</EW>
+<EW>
+<Name>Upper Limit</Name>
+<Choice>None</Choice>
+<Choice>Input 1</Choice>
+<Choice>Input 1 Inverted</Choice>
+<Choice>Input 2</Choice>
+<Choice>Input 2 Inverted</Choice>
+<Choice>Input 3</Choice>
+<Choice>Input 3 Inverted</Choice>
+<Val>2</Val>
+</EW>
+<EW>
+<Name>Home</Name>
+<Choice>None</Choice>
+<Choice>Input 1</Choice>
+<Choice>Input 1 Inverted</Choice>
+<Choice>Input 2</Choice>
+<Choice>Input 2 Inverted</Choice>
+<Choice>Input 3</Choice>
+<Choice>Input 3 Inverted</Choice>
+<Val>4</Val>
+</EW>
+<EW>
+<Name>Homing Direction</Name>
+<Choice>Positive</Choice>
+<Choice>Negative</Choice>
+<Val>1</Val>
+</EW>
+</Cluster>
+<Cluster>
+<Name>Joystick Setup</Name>
+<NumElts>5</NumElts>
+<EW>
+<Name>Axis Name</Name>
+<Choice>X Axis</Choice>
+<Choice>Y Axis</Choice>
+<Choice>Z Axis</Choice>
+<Choice>X Rot Axis</Choice>
+<Choice>Y Rot Axis</Choice>
+<Choice>Z Rot Axis</Choice>
+<Choice>U Axis</Choice>
+<Choice>V Axis</Choice>
+<Val>3</Val>
+</EW>
+<DBL>
+<Name>Deadband</Name>
+<Val>1000.00000000000000</Val>
+</DBL>
+<DBL>
+<Name>Max. Speed [%]</Name>
+<Val>100.00000000000000</Val>
+</DBL>
+<Boolean>
+<Name>Active?</Name>
+<Val>0</Val>
+</Boolean>
+<EW>
+<Name>Mapping</Name>
+<Choice>Linear</Choice>
+<Choice>Exponential</Choice>
+<Val>1</Val>
+</EW>
+</Cluster>
+</Cluster>
+<Cluster>
+<Name>Motor Setup</Name>
+<NumElts>3</NumElts>
+<Cluster>
+<Name>ESCO Com Setup</Name>
+<NumElts>4</NumElts>
+<Refnum>
+<Name>Port</Name>
+<RefKind>VISA</RefKind>
+<Val>COM6</Val>
+</Refnum>
+<Boolean>
+<Name>Sim?</Name>
+<Val>0</Val>
+</Boolean>
+<U32>
+<Name>Address</Name>
+<Val>2</Val>
+</U32>
+<String>
+<Name>Name</Name>
+<Val>Y</Val>
+</String>
+</Cluster>
+<Cluster>
+<Name>ESCO Motor Parameters</Name>
+<NumElts>12</NumElts>
+<EW>
+<Name>Motor Current</Name>
+<Choice>0.2 A</Choice>
+<Choice>0.5 A</Choice>
+<Choice>0.75 A</Choice>
+<Choice>1 A</Choice>
+<Choice>1.5 A</Choice>
+<Choice>2 A</Choice>
+<Val>3</Val>
+</EW>
+<EW>
+<Name>Hold Current</Name>
+<Choice>0%</Choice>
+<Choice>25%</Choice>
+<Choice>50%</Choice>
+<Choice>100%</Choice>
+<Val>0</Val>
+</EW>
+<EW>
+<Name>Microstepping</Name>
+<Choice>256</Choice>
+<Choice>128</Choice>
+<Choice>64</Choice>
+<Choice>32</Choice>
+<Choice>16</Choice>
+<Choice>8</Choice>
+<Choice>4</Choice>
+<Choice>2</Choice>
+<Choice>None</Choice>
+<Val>0</Val>
+</EW>
+<DBL>
+<Name>Conversion [Units/µStep]</Name>
+<Val>3.98438000000000E-6</Val>
+</DBL>
+<U32>
+<Name>Velocity [µSteps/s]</Name>
+<Val>100000</Val>
+</U32>
+<U32>
+<Name>Acceleration [µSteps/s²]</Name>
+<Val>5000</Val>
+</U32>
+<EW>
+<Name>Encoder Type</Name>
+<Choice>Software</Choice>
+<Choice>Absolute (SSI)</Choice>
+<Choice>Quadrature</Choice>
+<Val>2</Val>
+</EW>
+<FXP>
+<Name>Encoder Ratio [µStep/Pulses]</Name>
+<WordLength>32</WordLength>
+<IntegerLength>16</IntegerLength>
+<Sign>Signed</Sign>
+<Val>-0x0000000000066b85</Val>
+<Minimum>-0x0000000080000000</Minimum>
+<Maximum>0x000000007fffffff</Maximum>
+<Delta>
+<WordLength>32</WordLength>
+<IntegerLength>16</IntegerLength>
+<Val>0x0000000000000001</Val>
+</Delta>
+</FXP>
+<EW>
+<Name>Lower Limit</Name>
+<Choice>None</Choice>
+<Choice>Input 1</Choice>
+<Choice>Input 1 Inverted</Choice>
+<Choice>Input 2</Choice>
+<Choice>Input 2 Inverted</Choice>
+<Choice>Input 3</Choice>
+<Choice>Input 3 Inverted</Choice>
+<Val>4</Val>
+</EW>
+<EW>
+<Name>Upper Limit</Name>
+<Choice>None</Choice>
+<Choice>Input 1</Choice>
+<Choice>Input 1 Inverted</Choice>
+<Choice>Input 2</Choice>
+<Choice>Input 2 Inverted</Choice>
+<Choice>Input 3</Choice>
+<Choice>Input 3 Inverted</Choice>
+<Val>0</Val>
+</EW>
+<EW>
+<Name>Home</Name>
+<Choice>None</Choice>
+<Choice>Input 1</Choice>
+<Choice>Input 1 Inverted</Choice>
+<Choice>Input 2</Choice>
+<Choice>Input 2 Inverted</Choice>
+<Choice>Input 3</Choice>
+<Choice>Input 3 Inverted</Choice>
+<Val>4</Val>
+</EW>
+<EW>
+<Name>Homing Direction</Name>
+<Choice>Positive</Choice>
+<Choice>Negative</Choice>
+<Val>1</Val>
+</EW>
+</Cluster>
+<Cluster>
+<Name>Joystick Setup</Name>
+<NumElts>5</NumElts>
+<EW>
+<Name>Axis Name</Name>
+<Choice>X Axis</Choice>
+<Choice>Y Axis</Choice>
+<Choice>Z Axis</Choice>
+<Choice>X Rot Axis</Choice>
+<Choice>Y Rot Axis</Choice>
+<Choice>Z Rot Axis</Choice>
+<Choice>U Axis</Choice>
+<Choice>V Axis</Choice>
+<Val>0</Val>
+</EW>
+<DBL>
+<Name>Deadband</Name>
+<Val>0.00000000000000</Val>
+</DBL>
+<DBL>
+<Name>Max. Speed [%]</Name>
+<Val>0.00000000000000</Val>
+</DBL>
+<Boolean>
+<Name>Active?</Name>
+<Val>0</Val>
+</Boolean>
+<EW>
+<Name>Mapping</Name>
+<Choice>Linear</Choice>
+<Choice>Exponential</Choice>
+<Val>0</Val>
+</EW>
+</Cluster>
+</Cluster>
+<Cluster>
+<Name>Motor Setup</Name>
+<NumElts>3</NumElts>
+<Cluster>
+<Name>ESCO Com Setup</Name>
+<NumElts>4</NumElts>
+<Refnum>
+<Name>Port</Name>
+<RefKind>VISA</RefKind>
+<Val>COM9</Val>
+</Refnum>
+<Boolean>
+<Name>Sim?</Name>
+<Val>0</Val>
+</Boolean>
+<U32>
+<Name>Address</Name>
+<Val>3</Val>
+</U32>
+<String>
+<Name>Name</Name>
+<Val>Z</Val>
+</String>
+</Cluster>
+<Cluster>
+<Name>ESCO Motor Parameters</Name>
+<NumElts>12</NumElts>
+<EW>
+<Name>Motor Current</Name>
+<Choice>0.2 A</Choice>
+<Choice>0.5 A</Choice>
+<Choice>0.75 A</Choice>
+<Choice>1 A</Choice>
+<Choice>1.5 A</Choice>
+<Choice>2 A</Choice>
+<Val>3</Val>
+</EW>
+<EW>
+<Name>Hold Current</Name>
+<Choice>0%</Choice>
+<Choice>25%</Choice>
+<Choice>50%</Choice>
+<Choice>100%</Choice>
+<Val>0</Val>
+</EW>
+<EW>
+<Name>Microstepping</Name>
+<Choice>256</Choice>
+<Choice>128</Choice>
+<Choice>64</Choice>
+<Choice>32</Choice>
+<Choice>16</Choice>
+<Choice>8</Choice>
+<Choice>4</Choice>
+<Choice>2</Choice>
+<Choice>None</Choice>
+<Val>0</Val>
+</EW>
+<DBL>
+<Name>Conversion [Units/µStep]</Name>
+<Val>9.75000000000000E-6</Val>
+</DBL>
+<U32>
+<Name>Velocity [µSteps/s]</Name>
+<Val>80000</Val>
+</U32>
+<U32>
+<Name>Acceleration [µSteps/s²]</Name>
+<Val>5000</Val>
+</U32>
+<EW>
+<Name>Encoder Type</Name>
+<Choice>Software</Choice>
+<Choice>Absolute (SSI)</Choice>
+<Choice>Quadrature</Choice>
+<Val>2</Val>
+</EW>
+<FXP>
+<Name>Encoder Ratio [µStep/Pulses]</Name>
+<WordLength>32</WordLength>
+<IntegerLength>16</IntegerLength>
+<Sign>Signed</Sign>
+<Val>0x0000000000029007</Val>
+<Minimum>-0x0000000080000000</Minimum>
+<Maximum>0x000000007fffffff</Maximum>
+<Delta>
+<WordLength>32</WordLength>
+<IntegerLength>16</IntegerLength>
+<Val>0x0000000000000001</Val>
+</Delta>
+</FXP>
+<EW>
+<Name>Lower Limit</Name>
+<Choice>None</Choice>
+<Choice>Input 1</Choice>
+<Choice>Input 1 Inverted</Choice>
+<Choice>Input 2</Choice>
+<Choice>Input 2 Inverted</Choice>
+<Choice>Input 3</Choice>
+<Choice>Input 3 Inverted</Choice>
+<Val>3</Val>
+</EW>
+<EW>
+<Name>Upper Limit</Name>
+<Choice>None</Choice>
+<Choice>Input 1</Choice>
+<Choice>Input 1 Inverted</Choice>
+<Choice>Input 2</Choice>
+<Choice>Input 2 Inverted</Choice>
+<Choice>Input 3</Choice>
+<Choice>Input 3 Inverted</Choice>
+<Val>1</Val>
+</EW>
+<EW>
+<Name>Home</Name>
+<Choice>None</Choice>
+<Choice>Input 1</Choice>
+<Choice>Input 1 Inverted</Choice>
+<Choice>Input 2</Choice>
+<Choice>Input 2 Inverted</Choice>
+<Choice>Input 3</Choice>
+<Choice>Input 3 Inverted</Choice>
+<Val>3</Val>
+</EW>
+<EW>
+<Name>Homing Direction</Name>
+<Choice>Positive</Choice>
+<Choice>Negative</Choice>
+<Val>1</Val>
+</EW>
+</Cluster>
+<Cluster>
+<Name>Joystick Setup</Name>
+<NumElts>5</NumElts>
+<EW>
+<Name>Axis Name</Name>
+<Choice>X Axis</Choice>
+<Choice>Y Axis</Choice>
+<Choice>Z Axis</Choice>
+<Choice>X Rot Axis</Choice>
+<Choice>Y Rot Axis</Choice>
+<Choice>Z Rot Axis</Choice>
+<Choice>U Axis</Choice>
+<Choice>V Axis</Choice>
+<Val>0</Val>
+</EW>
+<DBL>
+<Name>Deadband</Name>
+<Val>0.00000000000000</Val>
+</DBL>
+<DBL>
+<Name>Max. Speed [%]</Name>
+<Val>0.00000000000000</Val>
+</DBL>
+<Boolean>
+<Name>Active?</Name>
+<Val>0</Val>
+</Boolean>
+<EW>
+<Name>Mapping</Name>
+<Choice>Linear</Choice>
+<Choice>Exponential</Choice>
+<Val>0</Val>
+</EW>
+</Cluster>
+</Cluster>
+<Cluster>
+<Name>Motor Setup</Name>
+<NumElts>3</NumElts>
+<Cluster>
+<Name>ESCO Com Setup</Name>
+<NumElts>4</NumElts>
+<Refnum>
+<Name>Port</Name>
+<RefKind>VISA</RefKind>
+<Val>COM8</Val>
+</Refnum>
+<Boolean>
+<Name>Sim?</Name>
+<Val>0</Val>
+</Boolean>
+<U32>
+<Name>Address</Name>
+<Val>0</Val>
+</U32>
+<String>
+<Name>Name</Name>
+<Val>Rot</Val>
+</String>
+</Cluster>
+<Cluster>
+<Name>ESCO Motor Parameters</Name>
+<NumElts>12</NumElts>
+<EW>
+<Name>Motor Current</Name>
+<Choice>0.2 A</Choice>
+<Choice>0.5 A</Choice>
+<Choice>0.75 A</Choice>
+<Choice>1 A</Choice>
+<Choice>1.5 A</Choice>
+<Choice>2 A</Choice>
+<Val>3</Val>
+</EW>
+<EW>
+<Name>Hold Current</Name>
+<Choice>0%</Choice>
+<Choice>25%</Choice>
+<Choice>50%</Choice>
+<Choice>100%</Choice>
+<Val>0</Val>
+</EW>
+<EW>
+<Name>Microstepping</Name>
+<Choice>256</Choice>
+<Choice>128</Choice>
+<Choice>64</Choice>
+<Choice>32</Choice>
+<Choice>16</Choice>
+<Choice>8</Choice>
+<Choice>4</Choice>
+<Choice>2</Choice>
+<Choice>None</Choice>
+<Val>0</Val>
+</EW>
+<DBL>
+<Name>Conversion [Units/µStep]</Name>
+<Val>3.90620000000000E-5</Val>
+</DBL>
+<U32>
+<Name>Velocity [µSteps/s]</Name>
+<Val>100000</Val>
+</U32>
+<U32>
+<Name>Acceleration [µSteps/s²]</Name>
+<Val>5000</Val>
+</U32>
+<EW>
+<Name>Encoder Type</Name>
+<Choice>Software</Choice>
+<Choice>Absolute (SSI)</Choice>
+<Choice>Quadrature</Choice>
+<Val>0</Val>
+</EW>
+<FXP>
+<Name>Encoder Ratio [µStep/Pulses]</Name>
+<WordLength>32</WordLength>
+<IntegerLength>16</IntegerLength>
+<Sign>Signed</Sign>
+<Val>0x0000000000010000</Val>
+<Minimum>-0x0000000080000000</Minimum>
+<Maximum>0x000000007fffffff</Maximum>
+<Delta>
+<WordLength>32</WordLength>
+<IntegerLength>16</IntegerLength>
+<Val>0x0000000000000001</Val>
+</Delta>
+</FXP>
+<EW>
+<Name>Lower Limit</Name>
+<Choice>None</Choice>
+<Choice>Input 1</Choice>
+<Choice>Input 1 Inverted</Choice>
+<Choice>Input 2</Choice>
+<Choice>Input 2 Inverted</Choice>
+<Choice>Input 3</Choice>
+<Choice>Input 3 Inverted</Choice>
+<Val>0</Val>
+</EW>
+<EW>
+<Name>Upper Limit</Name>
+<Choice>None</Choice>
+<Choice>Input 1</Choice>
+<Choice>Input 1 Inverted</Choice>
+<Choice>Input 2</Choice>
+<Choice>Input 2 Inverted</Choice>
+<Choice>Input 3</Choice>
+<Choice>Input 3 Inverted</Choice>
+<Val>0</Val>
+</EW>
+<EW>
+<Name>Home</Name>
+<Choice>None</Choice>
+<Choice>Input 1</Choice>
+<Choice>Input 1 Inverted</Choice>
+<Choice>Input 2</Choice>
+<Choice>Input 2 Inverted</Choice>
+<Choice>Input 3</Choice>
+<Choice>Input 3 Inverted</Choice>
+<Val>2</Val>
+</EW>
+<EW>
+<Name>Homing Direction</Name>
+<Choice>Positive</Choice>
+<Choice>Negative</Choice>
+<Val>0</Val>
+</EW>
+</Cluster>
+<Cluster>
+<Name>Joystick Setup</Name>
+<NumElts>5</NumElts>
+<EW>
+<Name>Axis Name</Name>
+<Choice>X Axis</Choice>
+<Choice>Y Axis</Choice>
+<Choice>Z Axis</Choice>
+<Choice>X Rot Axis</Choice>
+<Choice>Y Rot Axis</Choice>
+<Choice>Z Rot Axis</Choice>
+<Choice>U Axis</Choice>
+<Choice>V Axis</Choice>
+<Val>0</Val>
+</EW>
+<DBL>
+<Name>Deadband</Name>
+<Val>0.00000000000000</Val>
+</DBL>
+<DBL>
+<Name>Max. Speed [%]</Name>
+<Val>0.00000000000000</Val>
+</DBL>
+<Boolean>
+<Name>Active?</Name>
+<Val>0</Val>
+</Boolean>
+<EW>
+<Name>Mapping</Name>
+<Choice>Linear</Choice>
+<Choice>Exponential</Choice>
+<Val>0</Val>
+</EW>
+</Cluster>
+</Cluster>
+</Array>
+<Boolean>
+<Name>Is Subsystem?</Name>
+<Val>0</Val>
+</Boolean>
+</Cluster>
+</LVData>
