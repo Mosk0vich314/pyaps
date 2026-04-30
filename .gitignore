@@ -10,3 +10,4 @@ venv/
 *.asv
 data/
 *.log
+motor_debug.log
