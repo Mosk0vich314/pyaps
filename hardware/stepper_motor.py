@@ -79,6 +79,11 @@ class StepperMotor:
     # Configuration
     # ------------------------------------------------------------------
 
+    def init_hardware(self):
+        """Send the 'init' command to reset firmware counters and hardware state."""
+        self._send("init")
+        time.sleep(0.15)   # give firmware time to restart internal state
+
     def apply_settings(self):
         try:
             self.set_setting("motor_current",  self.motor_current)
@@ -90,6 +95,11 @@ class StepperMotor:
             self.set_setting("set_es_lower",   self.limit_lower)
             self.set_setting("set_es_upper",   self.limit_upper)
             self.set_setting("set_home",       self.home_switch)
+            # Keep firmware encoder_ratio at 1.0 (65536 in Q16.16) so that
+            # get_position returns raw encoder counts. Python's self.encoder_ratio
+            # is the software-side conversion and must not be mirrored into firmware
+            # or it gets applied twice, inflating position readback by enc_ratio².
+            self.set_setting("encoder_ratio",  65536)
             print(f"--- Settings applied to {self.name}.")
         except Exception as e:
             print(f"WARNING: failed to apply settings to {self.name}: {e}")
@@ -106,6 +116,9 @@ class StepperMotor:
         self.move_relative(steps)
 
     def move_absolute_units(self, value: float):
+        # mm / (mm/step) = motor_steps. 
+        # Since get_position returns (counts * ratio * conv), 
+        # the absolute target in steps must be (mm / conv).
         steps = round(value / self.conversion_factor) if self.conversion_factor != 0 else 0
         print(f"[{self.name}] ABS {value:.6f} mm  →  steps={steps:+d}")
         self.move_absolute(steps)
@@ -123,6 +136,7 @@ class StepperMotor:
     def get_status_parsed(self) -> dict:
         resp = self._query("get_status")
         val = int(resp) if resp.lstrip("-").isdigit() else 0
+        # Firmware status word is 12 bits (0–11); no bit 12 exists.
         return {
             "raw":              val,
             "undervoltage":     bool(val & (1 << 0)),
@@ -137,7 +151,6 @@ class StepperMotor:
             "stall":            bool(val & (1 << 9)),
             "upper_limit_hit":  bool(val & (1 << 10)),
             "lower_limit_hit":  bool(val & (1 << 11)),
-            "home_switch_hit":  bool(val & (1 << 12)),
         }
 
     def is_moving(self) -> bool:
@@ -224,6 +237,9 @@ class StepperMotor:
     # Serial helpers
     # ------------------------------------------------------------------
 
+    # Commands too frequent to print to console during moves — only log to file.
+    _SILENT_CMDS = frozenset(("get_status", "get_position"))
+
     def _query(self, cmd: str) -> str:
         with self._lock:
             self._serial.reset_input_buffer()
@@ -232,6 +248,8 @@ class StepperMotor:
             resp = raw.decode(errors="replace").strip()
             if self.debug:
                 _log(f"[{self.name}] Q: {cmd!r}  RAW: {raw!r}  RESP: {resp!r}")
+                if cmd not in self._SILENT_CMDS:
+                    print(f"[{self.name}] TX: {cmd!r}  →  RX: {resp!r}")
             if resp.startswith(cmd):
                 resp = resp[len(cmd):].strip()
             return resp
@@ -240,8 +258,13 @@ class StepperMotor:
         with self._lock:
             self._serial.reset_input_buffer()
             self._serial.write((cmd + "\r\n").encode())
+            if self.debug:
+                print(f"[{self.name}] TX: {cmd!r}")
             time.sleep(0.05)
             if self._serial.in_waiting:
                 ack = self._serial.readline()
                 if self.debug:
+                    ack_str = ack.decode(errors="replace").strip()
                     _log(f"[{self.name}] S: {cmd!r}  ACK: {ack!r}")
+                    if ack_str:
+                        print(f"[{self.name}] RX (ack): {ack_str!r}")

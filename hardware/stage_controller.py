@@ -32,8 +32,8 @@ class AxisConfig:
 # X/Y inverted to follow Cross (probe) position on chip (conv flipped)
 # enc_ratio remains original to handle reverse-mounted encoders
 DEFAULT_CONFIG = {
-    "X":   AxisConfig(port="COM5", address=1, conv=-3.98438e-6, enc_ratio=-6.42,   home_dir=1, lim_lower=4, lim_upper=2, home_sw=4, enc_type=2),
-    "Y":   AxisConfig(port="COM6", address=2, conv=-3.98438e-6, enc_ratio=-6.42,   home_dir=1, lim_lower=4, lim_upper=0, home_sw=4, enc_type=2),
+    "X":   AxisConfig(port="COM5", address=1, conv=3.98438e-6, enc_ratio=-6.42,   home_dir=1, lim_lower=4, lim_upper=2, home_sw=4, enc_type=2),
+    "Y":   AxisConfig(port="COM6", address=2, conv=3.98438e-6, enc_ratio=-6.42,   home_dir=1, lim_lower=4, lim_upper=0, home_sw=4, enc_type=2),
     "Z":   AxisConfig(port="COM8", address=3, conv=9.75e-6,     enc_ratio=2.56261, home_dir=1, lim_lower=3, lim_upper=1, home_sw=3, enc_type=2, velocity=80000),
     "Rot": AxisConfig(port="COM7", address=0, conv=3.9062e-5,   enc_ratio=1.0,     home_dir=0, lim_lower=0, lim_upper=0, home_sw=2, enc_type=0),
 }
@@ -55,6 +55,10 @@ class StageController:
         self.motor_y:   Optional[StepperMotor] = None
         self.motor_z:   Optional[StepperMotor] = None
         self.motor_rot: Optional[StepperMotor] = None
+
+        self.use_closed_loop = True  # Toggle between Python-calculated and Firmware absolute moves
+        self.CL_TOLERANCE = 0.020    # 20 microns
+        self.CL_MAX_TRIES = 3        # Maximum iterations to prevent infinite loops
 
         try:
             self.motor_x   = self._init_axis("X",   cfg["X"])
@@ -190,12 +194,36 @@ class StageController:
     def _move_abs(self, motor: Optional[StepperMotor], value: float):
         if motor is None:
             return
-        pos_before = motor.get_position()
-        print(f"[Stage] ABSOLUTE {motor.name}: target={value:.4f}, pos_before={pos_before:.4f}")
-        if "Rot" in motor.name:
-            motor.move_absolute_degrees(value)
-        else:
-            motor.move_absolute_mms(value)
-        motor.wait_until_done(self.WAIT_TIMEOUT)
+
+        if not self.use_closed_loop:
+            # Fallback to "Real" Absolute Motion (Firmware controlled)
+            print(f"[Stage] ABSOLUTE (Firmware) {motor.name}: target={value:.4f}")
+            if "Rot" in motor.name:
+                motor.move_absolute_degrees(value)
+            else:
+                motor.move_absolute_mms(value)
+            motor.wait_until_done(self.WAIT_TIMEOUT)
+            pos_after = motor.get_position()
+            print(f"[Stage] {motor.name}: pos_after={pos_after:.4f}  error={pos_after-value:+.4f}")
+            return
+
+        # "Fake" Absolute Motion with Closed-Loop iterations
+        print(f"[Stage] ABSOLUTE (Closed-Loop) {motor.name}: target={value:.4f}")
+        for i in range(self.CL_MAX_TRIES):
+            pos_before = motor.get_position()
+            delta = value - pos_before
+            
+            if abs(delta) <= self.CL_TOLERANCE:
+                print(f"[Stage] {motor.name}: Target reached within {self.CL_TOLERANCE}mm (Try {i})")
+                break
+                
+            print(f"[Stage] {motor.name} CL Try {i+1}: pos={pos_before:.4f}, moving REL Δ={delta:+.4f}")
+            if "Rot" in motor.name:
+                motor.move_relative_degrees(delta)
+            else:
+                motor.move_relative_mms(delta)
+                
+            motor.wait_until_done(self.WAIT_TIMEOUT)
+            
         pos_after = motor.get_position()
-        print(f"[Stage] {motor.name}: pos_after={pos_after:.4f}  Δ={pos_after-pos_before:+.4f}")
+        print(f"[Stage] {motor.name}: Final pos={pos_after:.4f}  error={pos_after-value:+.4f}")
