@@ -38,6 +38,23 @@ class FixedVoltageParams:
     time_per_point: float = 0.0
 
 
+@dataclass
+class GateRamp:
+    """Gate that gets ramped before a measurement and back after it.
+
+    Matches the `Gate` struct in legacy `Make_IV.m`. `enabled=False` means
+    skip the ramp entirely.
+    """
+    enabled: bool = False
+    output: int = 2
+    initV: float = 0.0
+    targetV: float = 0.0
+    endV: float = 0.0
+    ramp_rate: float = 1.0     # V/s
+    waiting_time: float = 0.0  # s, sleep after each ramp
+    V_per_V: float = 1.0
+
+
 class FixedVoltage:
     """Ramp an AO channel from startV → setV at the given V/s."""
 

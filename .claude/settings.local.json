@@ -15,7 +15,16 @@
       "Bash(rm -f measurements/base_measurement.py measurements/iv_measurement.py measurements/gate_sweep_measurement.py measurements/stability_measurement.py)",
       "Bash(rm -rf matlab_bridge Python LakeShore-Measurement-scripts-Adwin)",
       "Bash(rm -rf measurements/__pycache__ hardware/__pycache__ gui/__pycache__ utilities/__pycache__ matlab_bridge/__pycache__)",
-      "Bash(git restore *)"
+      "Bash(git restore *)",
+      "Bash(.venv/Scripts/python.exe -c \"import ADwin; print\\('ADwin module:', ADwin.__file__\\); print\\('attrs:', [a for a in dir\\(ADwin\\) if not a.startswith\\('_'\\)][:20]\\)\")",
+      "Bash(.venv/Scripts/python.exe -c \"import adwin; print\\('adwin module:', adwin.__file__\\)\")",
+      "Bash(.venv/Scripts/python.exe -m pip install pyqtgraph numpy scipy)",
+      "Bash(.venv/Scripts/python.exe -m pip install \"C:/ADwin/Developer/Python/\")",
+      "Bash(.venv/Scripts/python.exe -c \"import ADwin; print\\('ADwin:', ADwin.__file__\\); print\\('has ADwin class:', hasattr\\(ADwin, 'ADwin'\\)\\)\")",
+      "Bash(.venv/Scripts/python.exe -c ' *)",
+      "Bash(.venv/Scripts/python.exe)",
+      "Bash(.venv/Scripts/python.exe tests/_smoke_gui.py)",
+      "Bash(echo \"EXIT=$?\")"
     ]
   }
 }

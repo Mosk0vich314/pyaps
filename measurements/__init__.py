@@ -1,6 +1,6 @@
 from .base import BaseMeasurement, ADwinSettings
 from .sweep import Sweep, SweepParams
-from .fixed_voltage import FixedVoltage, FixedVoltageParams
+from .fixed_voltage import FixedVoltage, FixedVoltageParams, GateRamp
 from .iv import IVMeasurement
 from .gate_sweep import GateSweepMeasurement
 from .stability import StabilityMeasurement, StabilityGate
@@ -11,7 +11,7 @@ from .contact_routine import ContactRoutine, ContactParams
 __all__ = [
     "BaseMeasurement", "ADwinSettings",
     "Sweep", "SweepParams",
-    "FixedVoltage", "FixedVoltageParams",
+    "FixedVoltage", "FixedVoltageParams", "GateRamp",
     "IVMeasurement",
     "GateSweepMeasurement",
     "StabilityMeasurement", "StabilityGate",

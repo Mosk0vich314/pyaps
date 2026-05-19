@@ -31,7 +31,8 @@ from utilities.process_yield import process_yield
 from measurements import (
     ADwinSettings, IVMeasurement, GateSweepMeasurement,
     StabilityMeasurement, StabilityGate, NeedleAlignment, NeedleAlignParams,
-    SweepParams, FixedVoltageParams, ContactRoutine, ContactParams,
+    SweepParams, FixedVoltageParams, GateRamp,
+    ContactRoutine, ContactParams,
 )
 from hardware.switch_box import SwitchBox
 from hardware.adwin import get_adwin
@@ -578,22 +579,36 @@ class MainWindow(QMainWindow):
         form = QFormLayout(box)
         form.setContentsMargins(10, 16, 10, 10)
         form.setVerticalSpacing(6)
-        self._iv_process  = QLineEdit("Sweep_AO_read_AI_single_auto_FEMTO")
-        self._iv_start    = self._spin(-10, 10, 4, 0.0)
-        self._iv_min      = self._spin(-10, 10, 4, -0.5)
-        self._iv_max      = self._spin(-10, 10, 4,  0.5)
-        self._iv_dV       = self._spin(1e-5, 1.0, 5, 0.001)
-        self._iv_scanrate = self._ispin(1000, 10_000_000, 450000)
-        self._iv_settle   = self._spin(0, 10, 3, 0.0)
-        self._iv_output   = self._ispin(1, 8, 1)
-        form.addRow("Process:",      self._iv_process)
-        form.addRow("AO channel:",   self._iv_output)
-        form.addRow("Start V:",      self._iv_start)
-        form.addRow("Min V:",        self._iv_min)
-        form.addRow("Max V:",        self._iv_max)
-        form.addRow("dV (V):",       self._iv_dV)
-        form.addRow("Scan rate (Hz):", self._iv_scanrate)
-        form.addRow("Settling (ms):", self._iv_settle)
+        self._iv_process    = QLineEdit("Sweep_AO_read_AI_single_auto_FEMTO")
+        self._iv_output     = self._ispin(1, 8, 1)
+        self._iv_VperV      = self._spin(0.001, 1000, 4, 1.0)
+        self._iv_start      = self._spin(-10, 10, 4, 0.0)
+        self._iv_min        = self._spin(-10, 10, 4, -0.5)
+        self._iv_max        = self._spin(-10, 10, 4,  0.5)
+        self._iv_dV         = self._spin(1e-5, 1.0, 5, 0.002)
+        self._iv_sweep_dir  = QComboBox(); self._iv_sweep_dir.addItems(["up", "down"])
+        self._iv_maxI       = QDoubleSpinBox()
+        self._iv_maxI.setRange(0, 1.0); self._iv_maxI.setDecimals(9)
+        self._iv_maxI.setValue(0.0); self._iv_maxI.setSingleStep(1e-6)
+        self._iv_repeat     = self._ispin(1, 100_000, 1)
+        self._iv_scanrate   = self._ispin(1000, 10_000_000, 50_000)
+        self._iv_pts_av     = self._ispin(0, 1_000_000, 0)
+        self._iv_settle     = self._spin(0, 1000, 3, 0.0)
+        self._iv_settle_ar  = self._spin(0, 5000, 3, 200.0)
+        form.addRow("Process:",         self._iv_process)
+        form.addRow("AO channel:",      self._iv_output)
+        form.addRow("V/V (divider):",   self._iv_VperV)
+        form.addRow("Start V:",         self._iv_start)
+        form.addRow("Min V:",           self._iv_min)
+        form.addRow("Max V:",           self._iv_max)
+        form.addRow("dV (V):",          self._iv_dV)
+        form.addRow("Sweep dir:",       self._iv_sweep_dir)
+        form.addRow("Max I (0=off):",   self._iv_maxI)
+        form.addRow("Repeat:",          self._iv_repeat)
+        form.addRow("Scan rate (Hz):",  self._iv_scanrate)
+        form.addRow("points_av (0=auto):", self._iv_pts_av)
+        form.addRow("Settling (ms):",   self._iv_settle)
+        form.addRow("Settling AR (ms):", self._iv_settle_ar)
         return box
 
     def _build_gate_box(self) -> QGroupBox:
@@ -725,11 +740,104 @@ class MainWindow(QMainWindow):
         v = QVBoxLayout(root)
         v.setContentsMargins(8, 8, 8, 8)
         v.setSpacing(10)
+        v.addWidget(self._build_adwin_box())
+        v.addWidget(self._build_adc_box())
+        v.addWidget(self._build_pre_gate_box())
         v.addWidget(self._build_sample_box())
         v.addWidget(self._build_stage_settings_box())
         v.addWidget(self._build_utilities_box())
         v.addStretch()
         return root
+
+    # ---- ADwin hardware -------------------------------------------------
+    def _build_adwin_box(self) -> QGroupBox:
+        box = QGroupBox("ADwin Hardware"); box.setProperty("accent", "teal")
+        form = QFormLayout(box)
+        form.setContentsMargins(10, 16, 10, 10)
+        form.setVerticalSpacing(6)
+        self._adw_model = QComboBox(); self._adw_model.addItems(["GoldII", "ProII"])
+        self._adw_res4p = QCheckBox("4-point measurement (pair V/I ADCs)")
+        self._adw_auto  = QComboBox(); self._adw_auto.addItems(["FEMTO", "BPI", ""])
+        self._adw_T     = self._spin(0, 1000, 2, 300.0)
+        form.addRow("Model:",     self._adw_model)
+        form.addRow(self._adw_res4p)
+        form.addRow("Auto-range:", self._adw_auto)
+        form.addRow("T setpoint (K):", self._adw_T)
+        return box
+
+    # ---- ADC channels (8 rows) -----------------------------------------
+    def _build_adc_box(self) -> QGroupBox:
+        box = QGroupBox("ADC Channels"); box.setProperty("accent", "yellow")
+        v = QVBoxLayout(box)
+        v.setContentsMargins(10, 16, 10, 10)
+        v.setSpacing(4)
+
+        # Header
+        hdr = QHBoxLayout(); hdr.setSpacing(6)
+        for txt, w in (("CH", 28), ("Gain (V/A) or 'off'", 160), ("Preamp 2^N", 80)):
+            lab = QLabel(txt)
+            lab.setStyleSheet("color: #a8adb4; font-size: 8pt; font-weight: 600;")
+            lab.setFixedWidth(w)
+            hdr.addWidget(lab)
+        hdr.addStretch()
+        v.addLayout(hdr)
+
+        self._adc_gain_fields: list[QLineEdit] = []
+        self._adc_exp_fields:  list[QSpinBox]  = []
+        defaults = ["1e7", "off", "off", "off", "off", "off", "off", "off"]
+        for ch in range(8):
+            row = QHBoxLayout(); row.setSpacing(6)
+            n = QLabel(str(ch + 1)); n.setFixedWidth(28)
+            n.setAlignment(Qt.AlignCenter)
+            n.setStyleSheet(f"color: {C_TEAL_D}; font-weight: 600;")
+            row.addWidget(n)
+            gain = QLineEdit(defaults[ch]); gain.setFixedWidth(160)
+            self._adc_gain_fields.append(gain)
+            row.addWidget(gain)
+            exp = QSpinBox(); exp.setRange(0, 7); exp.setValue(0); exp.setFixedWidth(80)
+            self._adc_exp_fields.append(exp)
+            row.addWidget(exp)
+            row.addStretch()
+            v.addLayout(row)
+        return box
+
+    def _adc_lists(self) -> tuple[list, list]:
+        adc: list = []
+        for f in self._adc_gain_fields:
+            t = f.text().strip().lower()
+            if t in ("off", "", "none"):
+                adc.append("off")
+            else:
+                try:
+                    adc.append(float(t))
+                except ValueError:
+                    adc.append("off")
+        gains = [float(s.value()) for s in self._adc_exp_fields]
+        return adc, gains
+
+    # ---- Pre/Post gate (ramped before & after each measurement) --------
+    def _build_pre_gate_box(self) -> QGroupBox:
+        box = QGroupBox("Pre/Post Gate Ramp"); box.setProperty("accent", "orange")
+        form = QFormLayout(box)
+        form.setContentsMargins(10, 16, 10, 10)
+        form.setVerticalSpacing(6)
+        self._pg_enabled  = QCheckBox("Ramp gate before & after IV / Gate sweep")
+        self._pg_output   = self._ispin(1, 8, 2)
+        self._pg_init     = self._spin(-100, 100, 4, 0.0)
+        self._pg_target   = self._spin(-100, 100, 4, 0.0)
+        self._pg_end      = self._spin(-100, 100, 4, 0.0)
+        self._pg_ramprate = self._spin(0.001, 100, 3, 1.0)
+        self._pg_wait     = self._spin(0, 600, 2, 0.0)
+        self._pg_VperV    = self._spin(0.001, 1000, 4, 1.0)
+        form.addRow(self._pg_enabled)
+        form.addRow("AO channel:",   self._pg_output)
+        form.addRow("init V:",       self._pg_init)
+        form.addRow("target V:",     self._pg_target)
+        form.addRow("end V:",        self._pg_end)
+        form.addRow("ramp rate (V/s):", self._pg_ramprate)
+        form.addRow("waiting (s):",  self._pg_wait)
+        form.addRow("V/V (divider):", self._pg_VperV)
+        return box
 
     def _build_stage_settings_box(self) -> QGroupBox:
         box = QGroupBox("Stage Hardware Settings"); box.setProperty("accent", "teal")
@@ -1106,24 +1214,48 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _make_settings(self, m_type: str, dev_label: str = "") -> ADwinSettings:
+        adc, gains = self._adc_lists()
         return ADwinSettings(
-            ADwin="GoldII",
+            ADwin=self._adw_model.currentText(),
+            res4p=1 if self._adw_res4p.isChecked() else 0,
+            auto=self._adw_auto.currentText(),
+            ADC=adc,
+            ADC_gain=gains,
+            T=self._adw_T.value(),
             sample=self._sample_name.text(),
             filename=dev_label or self._sample_name.text(),
             save_dir=self._save_dir.text(),
             type=m_type,
         )
 
+    def _gate_ramp(self) -> GateRamp:
+        return GateRamp(
+            enabled=self._pg_enabled.isChecked(),
+            output=self._pg_output.value(),
+            initV=self._pg_init.value(),
+            targetV=self._pg_target.value(),
+            endV=self._pg_end.value(),
+            ramp_rate=self._pg_ramprate.value(),
+            waiting_time=self._pg_wait.value(),
+            V_per_V=self._pg_VperV.value(),
+        )
+
     def _iv_params(self) -> SweepParams:
         return SweepParams(
             process=self._iv_process.text(),
             output=self._iv_output.value(),
+            V_per_V=self._iv_VperV.value(),
             startV=self._iv_start.value(),
             minV=self._iv_min.value(),
             maxV=self._iv_max.value(),
             dV=self._iv_dV.value(),
+            sweep_dir=self._iv_sweep_dir.currentText(),
+            maxI=(self._iv_maxI.value() if self._iv_maxI.value() > 0 else None),
+            repeat=self._iv_repeat.value(),
             scanrate=self._iv_scanrate.value(),
             settling_time=self._iv_settle.value(),
+            settling_time_autoranging=self._iv_settle_ar.value(),
+            points_av=self._iv_pts_av.value(),
         )
 
     def _gate_sweep_params(self) -> tuple[SweepParams, FixedVoltageParams]:
@@ -1173,7 +1305,8 @@ class MainWindow(QMainWindow):
             if self._do_iv.isChecked():
                 self._set_status(f"{dev_label}: IV…")
                 IVMeasurement(self._make_settings("IV", dev_label),
-                              self._iv_params()).run(stop_flag=lambda: self._flag_stop)
+                              self._iv_params(),
+                              self._gate_ramp()).run(stop_flag=lambda: self._flag_stop)
             if self._do_gate.isChecked():
                 self._set_status(f"{dev_label}: Gate sweep…")
                 gate, bias = self._gate_sweep_params()

@@ -51,10 +51,16 @@ class SweepParams:
     maxV: float = 0.5
     dV: float = 0.001
     sweep_dir: str = "up"          # "up" or "down"
-    scanrate: float = 450_000      # Hz
+    scanrate: float = 450_000      # Hz (raw ADwin sample rate)
     settling_time: float = 0.0     # ms
     settling_time_autoranging: float = 1.0  # ms
-    points_av: int = 1
+    # Number of raw ADwin samples averaged per bias step. The legacy MATLAB
+    # convention is `scanrate / display_rate_hz`, with display_rate_hz = 50 Hz,
+    # which gives a smooth ~50 plotted-points/sec for live updates. Setting
+    # this to 0 picks that default automatically; set explicitly for a
+    # different noise/speed tradeoff.
+    points_av: int = 0
+    display_rate_hz: float = 50.0  # used only when points_av == 0
     V_per_V: float = 1.0           # voltage divider factor at the input
     repeat: int = 1
     # If maxI is set, ADwin process can short the output if current exceeds it
@@ -120,6 +126,9 @@ class Sweep:
         p.maxV = float(np.max(p.bias))
 
         # 2. Timing
+        if p.points_av <= 0:
+            # Auto: target ~50 plotted points/sec (legacy MATLAB convention).
+            p.points_av = max(1, int(p.scanrate / p.display_rate_hz))
         p.process_delay, p.loops_waiting = get_delays(
             p.scanrate, p.settling_time, s.clockfrequency)
         _, p.loops_waiting_autoranging = get_delays(
@@ -157,10 +166,10 @@ class Sweep:
         a.set_par(23, p.NumBias)
         a.set_par(25, 0)   # reset sweep counter
 
-        # Per-point timing for analysis
-        p.time_per_point = (
-            np.full(p.NumBias, p.points_av / p.scanrate + p.settling_time / 1000.0)
-        )
+        # Per-point timing for analysis (seconds per plotted bias step)
+        t_per_step = p.points_av / p.scanrate + p.settling_time / 1000.0
+        p.time_per_point = np.full(p.NumBias, t_per_step)
+        p.sampling_rate = np.full(p.NumBias, 1.0 / t_per_step)
 
         # 5. ADC gain array
         a.set_data_double(11, np.asarray(s.ADC_gain, dtype=np.float64), 1)
@@ -172,6 +181,9 @@ class Sweep:
         # 7. Run
         a.set_processdelay(self.SLOT, p.process_delay)
         a.start_process(self.SLOT)
+        total_runtime = p.NumBias * t_per_step
+        print(f"[Sweep] {p.NumBias} pts × {t_per_step*1000:.2f} ms = "
+              f"{total_runtime:.2f} s total (points_av={p.points_av})")
         if plot is not None:
             plot.clear()
 
