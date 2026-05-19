@@ -11,3 +11,4 @@ venv/
 data/
 *.log
 motor_debug.log
+motor_debug.log
