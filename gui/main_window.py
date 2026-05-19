@@ -28,6 +28,13 @@ from hardware.stage_controller import StageController
 from hardware.camera import Camera
 from hardware.device import LAYOUTS, generate_device_coordinates
 from utilities.process_yield import process_yield
+from measurements import (
+    ADwinSettings, IVMeasurement, GateSweepMeasurement,
+    StabilityMeasurement, StabilityGate, NeedleAlignment, NeedleAlignParams,
+    SweepParams, FixedVoltageParams, ContactRoutine, ContactParams,
+)
+from hardware.switch_box import SwitchBox
+from hardware.adwin import get_adwin
 
 
 # Charcoal / teal / orange palette with saturn red + yellow accents
@@ -216,6 +223,7 @@ class MainWindow(QMainWindow):
         tabs = QTabWidget()
         tabs.setMinimumWidth(440)
         tabs.addTab(self._wrap_scroll(self._build_motor_panel()),    "Stage")
+        tabs.addTab(self._wrap_scroll(self._build_measurements_panel()), "Measurements")
         tabs.addTab(self._wrap_scroll(self._build_settings_panel()), "Settings")
         tabs.addTab(self._build_console_panel(),                     "Console")
 
@@ -548,6 +556,167 @@ class MainWindow(QMainWindow):
         return box
 
     # ------------------------------------------------------------------
+    # Measurements tab
+    # ------------------------------------------------------------------
+
+    def _build_measurements_panel(self) -> QWidget:
+        root = QWidget()
+        v = QVBoxLayout(root)
+        v.setContentsMargins(8, 8, 8, 8)
+        v.setSpacing(10)
+        v.addWidget(self._build_iv_box())
+        v.addWidget(self._build_gate_box())
+        v.addWidget(self._build_stability_box())
+        v.addWidget(self._build_needle_box())
+        v.addWidget(self._build_contact_box())
+        v.addWidget(self._build_run_per_device_box())
+        v.addStretch()
+        return root
+
+    def _build_iv_box(self) -> QGroupBox:
+        box = QGroupBox("IV Sweep"); box.setProperty("accent", "orange")
+        form = QFormLayout(box)
+        form.setContentsMargins(10, 16, 10, 10)
+        form.setVerticalSpacing(6)
+        self._iv_process  = QLineEdit("Sweep_AO_read_AI_single_auto_FEMTO")
+        self._iv_start    = self._spin(-10, 10, 4, 0.0)
+        self._iv_min      = self._spin(-10, 10, 4, -0.5)
+        self._iv_max      = self._spin(-10, 10, 4,  0.5)
+        self._iv_dV       = self._spin(1e-5, 1.0, 5, 0.001)
+        self._iv_scanrate = self._ispin(1000, 10_000_000, 450000)
+        self._iv_settle   = self._spin(0, 10, 3, 0.0)
+        self._iv_output   = self._ispin(1, 8, 1)
+        form.addRow("Process:",      self._iv_process)
+        form.addRow("AO channel:",   self._iv_output)
+        form.addRow("Start V:",      self._iv_start)
+        form.addRow("Min V:",        self._iv_min)
+        form.addRow("Max V:",        self._iv_max)
+        form.addRow("dV (V):",       self._iv_dV)
+        form.addRow("Scan rate (Hz):", self._iv_scanrate)
+        form.addRow("Settling (ms):", self._iv_settle)
+        return box
+
+    def _build_gate_box(self) -> QGroupBox:
+        box = QGroupBox("Gate Sweep"); box.setProperty("accent", "yellow")
+        form = QFormLayout(box)
+        form.setContentsMargins(10, 16, 10, 10)
+        form.setVerticalSpacing(6)
+        self._gate_process = QLineEdit("Sweep_AO_read_AI_single_auto_FEMTO")
+        self._gate_output  = self._ispin(1, 8, 2)
+        self._gate_start   = self._spin(-100, 100, 3, 0.0)
+        self._gate_min     = self._spin(-100, 100, 3, -50.0)
+        self._gate_max     = self._spin(-100, 100, 3,  50.0)
+        self._gate_dV      = self._spin(1e-4, 10, 4, 0.1)
+        self._gate_VperV   = self._spin(0.01, 100, 3, 1.0)
+        self._gate_bias    = self._spin(-10, 10, 4, 0.1)
+        self._gate_bias_ch = self._ispin(1, 8, 1)
+        form.addRow("Process:",       self._gate_process)
+        form.addRow("Gate AO ch:",    self._gate_output)
+        form.addRow("Start V:",       self._gate_start)
+        form.addRow("Min V:",         self._gate_min)
+        form.addRow("Max V:",         self._gate_max)
+        form.addRow("dV (V):",        self._gate_dV)
+        form.addRow("V/V (divider):", self._gate_VperV)
+        form.addRow("Bias AO ch:",    self._gate_bias_ch)
+        form.addRow("Fixed bias V:",  self._gate_bias)
+        return box
+
+    def _build_stability_box(self) -> QGroupBox:
+        box = QGroupBox("Stability Diagram"); box.setProperty("accent", "red")
+        form = QFormLayout(box)
+        form.setContentsMargins(10, 16, 10, 10)
+        form.setVerticalSpacing(6)
+        self._stab_iv_min    = self._spin(-10, 10, 4, -0.2)
+        self._stab_iv_max    = self._spin(-10, 10, 4,  0.2)
+        self._stab_iv_dV     = self._spin(1e-5, 1.0, 5, 0.0004)
+        self._stab_gate_min  = self._spin(-100, 100, 3, -0.5)
+        self._stab_gate_max  = self._spin(-100, 100, 3,  0.5)
+        self._stab_gate_dV   = self._spin(1e-5, 10, 5, 0.001)
+        self._stab_gate_rate = self._spin(0.001, 100, 3, 0.5)
+        self._stab_gate_wait = self._spin(0, 10, 3, 0.1)
+        form.addRow("IV min V:",       self._stab_iv_min)
+        form.addRow("IV max V:",       self._stab_iv_max)
+        form.addRow("IV dV (V):",      self._stab_iv_dV)
+        form.addRow("Gate min V:",     self._stab_gate_min)
+        form.addRow("Gate max V:",     self._stab_gate_max)
+        form.addRow("Gate dV (V):",    self._stab_gate_dV)
+        form.addRow("Gate ramp (V/s):", self._stab_gate_rate)
+        form.addRow("Wait (s):",       self._stab_gate_wait)
+        return box
+
+    def _build_needle_box(self) -> QGroupBox:
+        box = QGroupBox("Needle Alignment"); box.setProperty("accent", "teal_d")
+        form = QFormLayout(box)
+        form.setContentsMargins(10, 16, 10, 10)
+        form.setVerticalSpacing(6)
+        self._needle_amp  = self._spin(0, 20, 2, 10.0)
+        self._needle_freq = self._spin(0.1, 1000, 2, 10.0)
+        self._needle_ch   = self._ispin(1, 8, 2)
+        form.addRow("AO channel:",   self._needle_ch)
+        form.addRow("Amplitude V:",  self._needle_amp)
+        form.addRow("Frequency Hz:", self._needle_freq)
+        row = QHBoxLayout()
+        btn_start = QPushButton("Start")
+        btn_stop  = QPushButton("Stop")
+        btn_start.clicked.connect(self._needle_start)
+        btn_stop.clicked.connect(self._needle_stop)
+        row.addWidget(btn_start); row.addWidget(btn_stop)
+        form.addRow(row)
+        return box
+
+    def _build_contact_box(self) -> QGroupBox:
+        box = QGroupBox("Contact (needle descent)"); box.setProperty("accent", "red")
+        form = QFormLayout(box)
+        form.setContentsMargins(10, 16, 10, 10)
+        form.setVerticalSpacing(6)
+        self._ct_threshold = QDoubleSpinBox()
+        self._ct_threshold.setRange(1e-12, 1e-6); self._ct_threshold.setDecimals(12)
+        self._ct_threshold.setValue(2e-9); self._ct_threshold.setSingleStep(1e-10)
+        self._ct_zstep   = self._spin(0.0001, 1.0, 4, 0.005)   # mm
+        self._ct_max     = self._ispin(1, 10000, 200)
+        self._ct_freq    = self._spin(0.1, 1000, 2, 10.0)
+        self._ct_amp     = self._spin(0, 20, 2, 10.0)
+        self._ct_runtime = self._spin(0.05, 5.0, 2, 0.3)
+        form.addRow("Threshold (A):",  self._ct_threshold)
+        form.addRow("Z step (mm):",    self._ct_zstep)
+        form.addRow("Max steps:",      self._ct_max)
+        form.addRow("Excitation Hz:",  self._ct_freq)
+        form.addRow("Excitation V:",   self._ct_amp)
+        form.addRow("Trace runtime s:", self._ct_runtime)
+        row = QHBoxLayout()
+        btn_run  = QPushButton("▼ Lower until contact")
+        btn_run.setStyleSheet(f"background: {C_RED}; color: white; font-weight: 600;")
+        btn_run.clicked.connect(self._contact_run)
+        btn_stop = QPushButton("Stop")
+        btn_stop.clicked.connect(lambda: setattr(self, "_flag_stop", True))
+        row.addWidget(btn_run); row.addWidget(btn_stop)
+        form.addRow(row)
+        self._contact_first = QCheckBox("Contact before each chip-scan device")
+        form.addRow(self._contact_first)
+        return box
+
+    def _build_run_per_device_box(self) -> QGroupBox:
+        box = QGroupBox("Run on current device"); box.setProperty("accent", "green")
+        grid = QGridLayout(box)
+        grid.setContentsMargins(10, 16, 10, 10)
+        grid.setHorizontalSpacing(8); grid.setVerticalSpacing(8)
+        self._do_iv   = QCheckBox("IV"); self._do_iv.setChecked(True)
+        self._do_gate = QCheckBox("Gate sweep")
+        self._do_stab = QCheckBox("Stability")
+        grid.addWidget(self._do_iv,   0, 0)
+        grid.addWidget(self._do_gate, 0, 1)
+        grid.addWidget(self._do_stab, 0, 2)
+        grid.addWidget(QLabel("Device label:"), 1, 0)
+        self._single_dev_label = QLineEdit("dev1")
+        grid.addWidget(self._single_dev_label, 1, 1, 1, 2)
+        btn = QPushButton("▶  Run selected")
+        btn.setStyleSheet(f"background: {C_TEAL_D}; color: #0a1412; font-weight: 700;")
+        btn.setMinimumHeight(32)
+        btn.clicked.connect(self._run_single)
+        grid.addWidget(btn, 2, 0, 1, 3)
+        return box
+
+    # ------------------------------------------------------------------
     # Settings tab
     # ------------------------------------------------------------------
 
@@ -660,6 +829,10 @@ class MainWindow(QMainWindow):
         h = QHBoxLayout(box)
         h.setContentsMargins(10, 16, 10, 10)
         h.setSpacing(6)
+        btn_switch = QPushButton("Switch Box pulse")
+        btn_switch.clicked.connect(self._toggle_switch_box)
+        btn_switch.setMinimumHeight(30)
+        h.addWidget(btn_switch)
         btn_yield  = QPushButton("Analyze Yield")
         btn_yield.clicked.connect(self._analyze_yield)
         btn_yield.setMinimumHeight(30)
@@ -917,6 +1090,7 @@ class MainWindow(QMainWindow):
                 self._stage.move_to_y(-target_y)
 
             self._set_status(f"Device {dev_id}")
+            self._run_routines(f"{self._sample_name.text()}-{dev_id}")
 
         self._set_status("Scan complete." if not self._flag_stop else "Scan stopped.")
 
@@ -926,6 +1100,160 @@ class MainWindow(QMainWindow):
             f"Align on device {self._start_dev.value()}, then click OK."
         )
         event.set()
+
+    # ------------------------------------------------------------------
+    # Measurements
+    # ------------------------------------------------------------------
+
+    def _make_settings(self, m_type: str, dev_label: str = "") -> ADwinSettings:
+        return ADwinSettings(
+            ADwin="GoldII",
+            sample=self._sample_name.text(),
+            filename=dev_label or self._sample_name.text(),
+            save_dir=self._save_dir.text(),
+            type=m_type,
+        )
+
+    def _iv_params(self) -> SweepParams:
+        return SweepParams(
+            process=self._iv_process.text(),
+            output=self._iv_output.value(),
+            startV=self._iv_start.value(),
+            minV=self._iv_min.value(),
+            maxV=self._iv_max.value(),
+            dV=self._iv_dV.value(),
+            scanrate=self._iv_scanrate.value(),
+            settling_time=self._iv_settle.value(),
+        )
+
+    def _gate_sweep_params(self) -> tuple[SweepParams, FixedVoltageParams]:
+        gate = SweepParams(
+            process=self._gate_process.text(),
+            output=self._gate_output.value(),
+            startV=self._gate_start.value(),
+            minV=self._gate_min.value(),
+            maxV=self._gate_max.value(),
+            dV=self._gate_dV.value(),
+            V_per_V=self._gate_VperV.value(),
+        )
+        bias = FixedVoltageParams(
+            output=self._gate_bias_ch.value(),
+            setV=self._gate_bias.value(),
+        )
+        return gate, bias
+
+    def _stab_params(self) -> tuple[SweepParams, StabilityGate]:
+        iv = SweepParams(
+            process=self._iv_process.text(),
+            output=self._iv_output.value(),
+            startV=0.0,
+            minV=self._stab_iv_min.value(),
+            maxV=self._stab_iv_max.value(),
+            dV=self._stab_iv_dV.value(),
+            scanrate=self._iv_scanrate.value(),
+        )
+        gate = StabilityGate(
+            output=self._gate_output.value(),
+            minV=self._stab_gate_min.value(),
+            maxV=self._stab_gate_max.value(),
+            dV=self._stab_gate_dV.value(),
+            ramp_rate=self._stab_gate_rate.value(),
+            waiting_time=self._stab_gate_wait.value(),
+            V_per_V=self._gate_VperV.value(),
+        )
+        return iv, gate
+
+    def _run_routines(self, dev_label: str):
+        try:
+            if hasattr(self, "_contact_first") and self._contact_first.isChecked():
+                self._set_status(f"{dev_label}: contacting…")
+                if not self._do_contact():
+                    self._set_status(f"{dev_label}: no contact — skipping.")
+                    return
+            if self._do_iv.isChecked():
+                self._set_status(f"{dev_label}: IV…")
+                IVMeasurement(self._make_settings("IV", dev_label),
+                              self._iv_params()).run(stop_flag=lambda: self._flag_stop)
+            if self._do_gate.isChecked():
+                self._set_status(f"{dev_label}: Gate sweep…")
+                gate, bias = self._gate_sweep_params()
+                GateSweepMeasurement(self._make_settings("Gatesweep", dev_label),
+                                      gate, bias).run(stop_flag=lambda: self._flag_stop)
+            if self._do_stab.isChecked():
+                self._set_status(f"{dev_label}: Stability…")
+                iv, gate = self._stab_params()
+                StabilityMeasurement(self._make_settings("Stability", dev_label),
+                                      iv, gate).run(stop_flag=lambda: self._flag_stop)
+            self._set_status(f"{dev_label}: done")
+        except Exception as e:
+            self._set_status(f"Error on {dev_label}: {e}")
+            print(f"Routine error on {dev_label}: {e}")
+
+    def _run_single(self):
+        if not self._sample_name.text():
+            QMessageBox.warning(self, "No sample", "Enter a sample name.")
+            return
+        if not (self._do_iv.isChecked() or self._do_gate.isChecked() or self._do_stab.isChecked()):
+            QMessageBox.warning(self, "Nothing selected",
+                                "Tick at least one of IV / Gate / Stability.")
+            return
+        label = self._single_dev_label.text().strip() or "dev"
+        dev_label = f"{self._sample_name.text()}-{label}"
+        self._flag_stop = False
+        threading.Thread(target=self._run_routines, args=(dev_label,), daemon=True).start()
+
+    def _needle_start(self):
+        try:
+            self._needle = NeedleAlignment(
+                self._make_settings("NeedleAlign", "align"),
+                NeedleAlignParams(
+                    output=self._needle_ch.value(),
+                    amplitude=self._needle_amp.value(),
+                    frequency=self._needle_freq.value(),
+                ))
+            self._needle.start()
+        except Exception as e:
+            QMessageBox.warning(self, "Needle error", str(e))
+
+    def _needle_stop(self):
+        if hasattr(self, "_needle") and self._needle:
+            try:
+                self._needle.stop()
+            except Exception as e:
+                print(f"Needle stop error: {e}")
+
+    def _contact_params(self) -> ContactParams:
+        return ContactParams(
+            threshold=self._ct_threshold.value(),
+            z_step_mm=self._ct_zstep.value(),
+            max_steps=self._ct_max.value(),
+            excitation_frequency=self._ct_freq.value(),
+            excitation_amplitude=self._ct_amp.value(),
+            timetrace_runtime=self._ct_runtime.value(),
+            gate_output_channel=self._gate_output.value(),
+        )
+
+    def _do_contact(self) -> bool:
+        if not self._stage:
+            print("[Contact] No stage — aborting.")
+            return False
+        adwin = get_adwin("GoldII")
+        settings = self._make_settings("Contact")
+        routine = ContactRoutine(adwin, settings, self._stage)
+        result = routine.run(self._contact_params(),
+                             stop_flag=lambda: self._flag_stop)
+        return result.get("contacted", False)
+
+    def _contact_run(self):
+        self._flag_stop = False
+        threading.Thread(target=self._do_contact, daemon=True).start()
+
+    def _toggle_switch_box(self):
+        try:
+            sb = SwitchBox()
+            sb.pulse()
+        except Exception as e:
+            QMessageBox.warning(self, "SwitchBox error", str(e))
 
     # ------------------------------------------------------------------
     # Utilities

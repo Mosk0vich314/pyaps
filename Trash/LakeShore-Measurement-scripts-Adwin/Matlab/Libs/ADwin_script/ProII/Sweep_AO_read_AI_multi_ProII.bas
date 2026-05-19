@@ -1,0 +1,248 @@
+'<ADbasic Header, Headerversion 001.001>
+' Process_Number                 = 1
+' Initial_Processdelay           = 1000
+' Eventsource                    = Timer
+' Control_long_Delays_for_Stop   = No
+' Priority                       = High
+' Version                        = 1
+' ADbasic_Version                = 6.3.1
+' Optimize                       = Yes
+' Optimize_Level                 = 1
+' Stacksize                      = 1000
+' Info_Last_Save                 = DDM07439  EMPA\lab405
+'<Header End>
+' AO1_read_AI_18b.bas: ramps voltage on AO1, recording voltage on AI 1-4
+
+'Inputs general:
+'PAR_1 = Gain DAC 1
+'PAR_2 = Gain DAC 2
+'PAR_3 = Gain DAC 3
+'PAR_4 = Gain DAC 4
+'PAR_5 = Address AIN F4/18
+'PAR_6 = Address AOUT 4/16
+'PAR_7 = Address DIO-32
+'PAR_8 = voltage sweep output channel
+'PAR_10 = ADC resolution
+
+'Measurement parameters:
+'FPAR_1 = actual AI2 value in bin
+'FPAR_2 = actual AI3 value in bin
+'FPAR_3 = actual AI4 value in bin
+'FPAR_4 = actual AI5 value in bin
+
+'Inputs:
+'PAR_21 = no of points to average over
+'PAR_22 = no of loops to wait before measure
+'PAR_23 = length of voltage array
+'PAR_24 = actual counter
+
+'DATA_1 = AO1 voltage values array (maximum length 1048576, so 4 arrays can be handled in parallel)
+
+'Outputs:
+'DATA_2 = averaged AI1 bin array 
+'DATA_3 = averaged AI2 bin array 
+'DATA_4 = averaged AI3 bin array 
+'DATA_5 = averaged AI4 bin array 
+'DATA_6 = read ADC values
+
+#INCLUDE ADwinPro_all.Inc
+'#INCLUDE C:\Users\lab405\Desktop\Lakeshore-ADwin-GoldII\Matlab\ADwin_script\Additional_functions.Inc
+
+DIM DATA_1[50000] as long     'voltage input  
+DIM DATA_2[50000] as float    'AI1
+DIM DATA_3[50000] as float    'AI2
+DIM DATA_4[50000] as float    'AI3
+DIM DATA_5[50000] as float    'AI4
+DIM DATA_6[50000] as float    'AI5
+DIM DATA_7[50000] as float    'AI6
+DIM DATA_8[50000] as float    'AI7
+DIM DATA_9[50000] as float    'AI8
+DIM DATA_10[8] as long       'ADC values  
+DIM DATA_11[8] as long       'ADC gains
+
+
+DIM measureflag as long
+DIM totalcurrent1,totalcurrent2,totalcurrent3,totalcurrent4,totalcurrent5,totalcurrent6,totalcurrent7,totalcurrent8 as float
+DIM avgcounter,waitcounter,voltagecounter, waitcounterFirstpoint as long
+DIM bin1,bin2,bin3,bin4,bin5,bin6,bin7,bin8 as long
+DIM actual_V as long
+DIM output_min, output_max, bin_size as float
+DIM IV_gain1,IV_gain2,IV_gain3,IV_gain4,IV_gain5,IV_gain6,IV_gain7,IV_gain8 as float
+DIM ADC_gain1,ADC_gain2,ADC_gain3,ADC_gain4,ADC_gain5,ADC_gain6,ADC_gain7,ADC_gain8 as long
+DIM Combi_gain1,Combi_gain2,Combi_gain3,Combi_gain4,Combi_gain5,Combi_gain6,Combi_gain7,Combi_gain8 as float
+
+INIT:
+  measureflag = 9 'to start measurement directly after start voltage is reached, then increase output 
+  avgcounter = 0
+  waitcounter = 0
+  voltagecounter = 1
+  waitcounterFirstpoint = 0
+  actual_V = DATA_1[1]
+  
+  'convert bin to V
+  output_min = -10
+  output_max = 9.99969
+  bin_size = (output_max-output_min) / (2^PAR_10)
+  
+  'set DAC to first value
+  P2_Write_DAC(PAR_6, PAR_8, actual_V)
+  P2_Start_DAC(PAR_6)
+    
+  'set ADC gain
+  P2_Set_gain(PAR_5, 1, DATA_11[1])
+  P2_Set_gain(PAR_5, 2, DATA_11[2])
+  P2_Set_gain(PAR_5, 3, DATA_11[3])
+  P2_Set_gain(PAR_5, 4, DATA_11[4])
+  P2_Set_gain(PAR_5, 5, DATA_11[5])
+  P2_Set_gain(PAR_5, 6, DATA_11[6])
+  P2_Set_gain(PAR_5, 7, DATA_11[7])
+  P2_Set_gain(PAR_5, 8, DATA_11[8])
+  
+  ADC_gain1 = 2^DATA_11[1]
+  ADC_gain2 = 2^DATA_11[2]
+  ADC_gain3 = 2^DATA_11[3]
+  ADC_gain4 = 2^DATA_11[4]
+  ADC_gain5 = 2^DATA_11[5]
+  ADC_gain6 = 2^DATA_11[6]
+  ADC_gain7 = 2^DATA_11[7]
+  ADC_gain8 = 2^DATA_11[8]
+  
+  'set IV gain 
+  IV_gain1 = 10^(-1*FPAR_27)
+  IV_gain2 = 10^(-1*FPAR_28)
+  IV_gain3 = 10^(-1*FPAR_29)
+  IV_gain4 = 10^(-1*FPAR_30)
+  IV_gain5 = 10^(-1*FPAR_31)
+  IV_gain6 = 10^(-1*FPAR_32)
+  IV_gain7 = 10^(-1*FPAR_33)
+  IV_gain8 = 10^(-1*FPAR_34)  
+   
+  ' get combined gain
+  Combi_gain1 = IV_gain1 / ADC_gain1
+  Combi_gain2 = IV_gain2 / ADC_gain2
+  Combi_gain3 = IV_gain3 / ADC_gain3
+  Combi_gain4 = IV_gain4 / ADC_gain4
+  Combi_gain5 = IV_gain5 / ADC_gain5
+  Combi_gain6 = IV_gain6 / ADC_gain6
+  Combi_gain7 = IV_gain7 / ADC_gain7
+  Combi_gain8 = IV_gain8 / ADC_gain8
+ 
+EVENT:
+  SELECTCASE measureflag 'measurement: 0 = ramp to next voltage point ; 1 = wait ; 2 = measure 
+     
+    CASE 9 
+      IF(waitcounterFirstpoint = 30e6/2000) THEN
+        measureflag = 0
+        P2_Start_ConvF(PAR_5, 11111111) ' 0Fh = 000...0001111
+        P2_Wait_EOC(PAR_5)
+      ELSE
+        waitcounterFirstpoint = waitcounterFirstpoint + 1
+      ENDIF
+      
+    CASE 0 'output desired voltage on DAC1
+      PAR_24 = actual_V   
+      PAR_25 = voltagecounter
+      IF(DATA_1[voltagecounter] > actual_V) THEN INC(actual_V)      
+      IF(DATA_1[voltagecounter] < actual_V) THEN DEC(actual_V) 
+     
+      IF  (actual_V = (DATA_1[voltagecounter])) THEN 
+        IF (PAR_22 = 0) THEN
+          measureflag = 2 
+          waitcounter = 0
+          avgcounter = 0
+          
+          totalcurrent1 = 0
+          totalcurrent2 = 0
+          totalcurrent3 = 0
+          totalcurrent4 = 0
+          totalcurrent5 = 0
+          totalcurrent6 = 0
+          totalcurrent7 = 0
+          totalcurrent8 = 0
+        ELSE
+          measureflag = 1 
+        ENDIF 
+      ENDIF
+      IF (voltagecounter <= PAR_23) THEN 
+        P2_Write_DAC(PAR_6, PAR_8, actual_V)
+        P2_Start_DAC(PAR_6)
+      ENDIF
+      
+    CASE 1 'measure voltage on ADC1
+
+      IF(waitcounter = PAR_22) THEN
+        measureflag = 2
+        waitcounter = 0
+        avgcounter = 0
+        
+        totalcurrent1 = 0
+        totalcurrent2 = 0
+        totalcurrent3 = 0
+        totalcurrent4 = 0
+        totalcurrent5 = 0
+        totalcurrent6 = 0
+        totalcurrent7 = 0
+        totalcurrent8 = 0
+      ELSE
+        waitcounter = waitcounter + 1
+      ENDIF
+        
+    CASE 2    
+      'P2_Wait_EOC(PAR_5)
+      P2_Read_ADCF8_24B(PAR_5, DATA_10, 1)
+      P2_Start_ConvF(PAR_5, 0000000011111111b) ' 0Fh = 000...0001111     
+       
+      bin1 = DATA_10[1] / 64
+      bin2 = DATA_10[2] / 64
+      bin3 = DATA_10[3] / 64
+      bin4 = DATA_10[4] / 64
+      bin5 = DATA_10[5] / 64
+      bin6 = DATA_10[6] / 64
+      bin7 = DATA_10[7] / 64
+      bin8 = DATA_10[8] / 64
+      
+      totalcurrent1 = totalcurrent1 + ((output_min + (bin1 * bin_size)) * Combi_gain1)
+      totalcurrent2 = totalcurrent2 + ((output_min + (bin2 * bin_size)) * Combi_gain2)
+      totalcurrent3 = totalcurrent3 + ((output_min + (bin3 * bin_size)) * Combi_gain3)
+      totalcurrent4 = totalcurrent4 + ((output_min + (bin4 * bin_size)) * Combi_gain4)
+      totalcurrent5 = totalcurrent5 + ((output_min + (bin5 * bin_size)) * Combi_gain5)
+      totalcurrent6 = totalcurrent6 + ((output_min + (bin6 * bin_size)) * Combi_gain6)
+      totalcurrent7 = totalcurrent7 + ((output_min + (bin7 * bin_size)) * Combi_gain7)
+      totalcurrent8 = totalcurrent8 + ((output_min + (bin8 * bin_size)) * Combi_gain8)
+      
+      avgcounter = avgcounter + 1
+          
+      ' get averaging
+      IF(avgcounter = PAR_21) THEN
+        FPAR_1 = totalcurrent1 / PAR_21
+        FPAR_2 = totalcurrent2 / PAR_21
+        FPAR_3 = totalcurrent3 / PAR_21
+        FPAR_4 = totalcurrent4 / PAR_21
+        FPAR_5 = totalcurrent5 / PAR_21
+        FPAR_6 = totalcurrent6 / PAR_21
+        FPAR_7 = totalcurrent7 / PAR_21
+        FPAR_8 = totalcurrent8 / PAR_21
+        
+        DATA_2[voltagecounter]= FPAR_1
+        DATA_3[voltagecounter]= FPAR_2
+        DATA_4[voltagecounter]= FPAR_3
+        DATA_5[voltagecounter]= FPAR_4
+        DATA_6[voltagecounter]= FPAR_5
+        DATA_7[voltagecounter]= FPAR_6
+        DATA_8[voltagecounter]= FPAR_7
+        DATA_9[voltagecounter]= FPAR_8
+                           
+        measureflag = 0
+        voltagecounter = voltagecounter + 1
+      ENDIF
+
+      ' stop when reached end of vector
+      IF (voltagecounter  = PAR_23 + 1) THEN   
+        end  
+      ENDIF
+          
+  ENDSELECT
+  
+FINISH:
+  P2_Write_DAC(PAR_6, PAR_8, DATA_1[PAR_23])
+  P2_Start_DAC(PAR_6)

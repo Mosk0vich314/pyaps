@@ -6,7 +6,16 @@
       "Bash(tasklist)",
       "Bash(taskkill *)",
       "Bash(awk '{print $2}')",
-      "Bash(xargs -I{} taskkill //PID {} //F)"
+      "Bash(xargs -I{} taskkill //PID {} //F)",
+      "Read(//c/Users/moan/Documents/GitHub/**)",
+      "Bash(pip install *)",
+      "Bash(mkdir -p \"C:/Users/moan/Documents/GitHub/pyaps/adwin_processes\")",
+      "Bash(cp -r \"C:/Users/moan/Documents/GitHub/pyaps/LakeShore-Measurement-scripts-Adwin/Matlab/Libs/ADwin_script/GoldII\" \"C:/Users/moan/Documents/GitHub/pyaps/adwin_processes/\")",
+      "Bash(cp -r \"C:/Users/moan/Documents/GitHub/pyaps/LakeShore-Measurement-scripts-Adwin/Matlab/Libs/ADwin_script/ProII\" \"C:/Users/moan/Documents/GitHub/pyaps/adwin_processes/\")",
+      "Bash(rm -f measurements/base_measurement.py measurements/iv_measurement.py measurements/gate_sweep_measurement.py measurements/stability_measurement.py)",
+      "Bash(rm -rf matlab_bridge Python LakeShore-Measurement-scripts-Adwin)",
+      "Bash(rm -rf measurements/__pycache__ hardware/__pycache__ gui/__pycache__ utilities/__pycache__ matlab_bridge/__pycache__)",
+      "Bash(git restore *)"
     ]
   }
 }
